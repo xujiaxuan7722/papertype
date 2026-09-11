@@ -1,0 +1,27 @@
+[project]
+name = "papertype"
+version = "0.1.0"
+description = "纸卷上机：把 Word/PDF/图片试卷变成可作答的电子卷，只汇总答案不判分"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi", "uvicorn[standard]", "python-multipart",
+  "pymupdf", "python-docx", "rapidocr", "onnxruntime", "pillow",
+  "openpyxl", "httpx",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: 需要 OCR 引擎，耗时数秒"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["papertype*"]
+
+[tool.setuptools.package-data]
+papertype = ["web/static/*"]

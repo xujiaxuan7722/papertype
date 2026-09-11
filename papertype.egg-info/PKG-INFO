@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: papertype
+Version: 0.1.0
+Summary: 纸卷上机：把 Word/PDF/图片试卷变成可作答的电子卷，只汇总答案不判分
+Requires-Python: >=3.11
+Requires-Dist: fastapi
+Requires-Dist: uvicorn[standard]
+Requires-Dist: python-multipart
+Requires-Dist: pymupdf
+Requires-Dist: python-docx
+Requires-Dist: rapidocr
+Requires-Dist: onnxruntime
+Requires-Dist: pillow
+Requires-Dist: openpyxl
+Requires-Dist: httpx
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
