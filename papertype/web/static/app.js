@@ -59,6 +59,11 @@ function route() {
 window.addEventListener('hashchange', route);
 window.addEventListener('DOMContentLoaded', route);
 
+/* 回到顶部：页面滚过一屏的一半才显示 */
+const totop = document.getElementById('totop');
+window.addEventListener('scroll', () => { totop.hidden = window.scrollY < window.innerHeight / 2; }, { passive: true });
+totop.onclick = () => window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+
 /* ---------------- 首页 ---------------- */
 async function home() {
   const d = await api('/api/papers');
