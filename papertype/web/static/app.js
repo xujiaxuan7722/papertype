@@ -397,7 +397,7 @@ async function take(id, mode) {
     app.innerHTML = `<div class="take"><div class="sheet"><h1>${esc(p.title)}</h1>
       ${qs.map((q, i) => { let h = ''; if (q.unit !== lastUnit) { lastUnit = q.unit; h += `<div class="unit">${esc(q.unit)}</div>`; }
         const mat = (q.group && qs.find(x => x.group === q.group) === q) ? (q.material || '') : null;
-        return h + `${mat !== null ? `${mat ? `<details class="material" ${materialImg(q) ? '' : 'open'}><summary>材料文字（点开 / 收起）</summary>${esc(mat)}</details>` : ''}${materialImg(q)}` : ''}<div class="q" data-i="${i}"><div class="row" style="justify-content:space-between"><div class="stem"><span class="no">${q.no}.</span>${esc(q.stem)} <span class="muted">[${TYPE[q.type]}]</span></div><button class="btn small mk">${st.marks.has(key(q)) ? '★ 已标记' : '☆ 标记'}</button></div><div class="ans">${optionsHtml(q, i)}</div></div>`; }).join('')}
+        return h + `${mat !== null ? `${mat ? `<details class="material" ${materialImg(q) ? '' : 'open'}><summary>材料文字（点开 / 收起）</summary>${esc(mat)}</details>` : ''}${materialImg(q)}` : ''}<div class="q" data-i="${i}"><div class="qhead"><div class="stem"><span class="no">${q.no}.</span>${esc(q.stem)} <span class="muted">[${TYPE[q.type]}]</span></div><button class="btn small mk">${st.marks.has(key(q)) ? '★ 已标记' : '☆ 标记'}</button></div><div class="ans">${optionsHtml(q, i)}</div></div>`; }).join('')}
       </div>${side}</div>`;
     bind(app);
     app.querySelectorAll('.sheet .q .mk').forEach(b => b.onclick = () => { const q = qs[+b.closest('.q').dataset.i]; const k = key(q); st.marks.has(k) ? st.marks.delete(k) : st.marks.add(k); touch(); refresh(); });

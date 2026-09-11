@@ -101,6 +101,9 @@ td.n{font-variant-numeric:tabular-nums}
 .kbd{font-family:var(--mono);font-size:12px;color:var(--ink-3)}
 /* 整卷预览 */
 .sheet .q{border-bottom:1px solid var(--rule);padding:14px 0}
+.sheet .qhead{display:flex;gap:14px;align-items:flex-start;flex-wrap:nowrap;margin-bottom:8px}
+.sheet .qhead .stem{flex:1;white-space:pre-wrap}
+.sheet .qhead .mk{flex-shrink:0;white-space:nowrap}
 .sheet .q .no{font-family:var(--mono);color:var(--ink-2);margin-right:8px}
 .sheet .unit{margin:22px 0 6px;font-weight:700;font-size:17px}
 .sticky-bottom{position:sticky;bottom:0;background:var(--paper);border-top:1px solid var(--rule);padding:10px 0;margin-top:20px}
