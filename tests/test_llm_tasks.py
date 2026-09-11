@@ -44,3 +44,16 @@ def test_questions_to_text_roundtrip():
                          Question(unit="A", no=2, stem="第二题", options=[], type="blank", blanks=1)])
     text = tasks.questions_to_text(p, only=["A|2"])
     assert "2. 第二题" in text and "1. 题干" not in text
+
+
+def test_raw_span_text_from_pdf(tmp_path, monkeypatch):
+    import os
+    monkeypatch.setenv("PAPERTYPE_DATA", str(tmp_path))
+    from papertype import pipeline
+    p = pipeline.import_file("tests/fixtures/icbc.pdf")
+    q37 = next(q for q in p.questions if q.no == 37)
+    text = tasks.raw_span_text(p, [q37.key()])
+    assert text.startswith("37.300 6/11") and "A.54" in text and "【答案】" in text   # 原始文字含答案，交给模型时由格式说明剔除
+    q51 = next(q for q in p.questions if q.no == 51)
+    t51 = tasks.raw_span_text(p, [q51.key()])
+    assert "2019 年全年全国居民人均可支配收入" in t51 and "51.基于资料" in t51

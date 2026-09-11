@@ -149,8 +149,8 @@ async function importPage() {
   render();
 }
 
-async function runLLM(kind, id, scope) {
-  const r = await api(`/api/${kind}/${id}/llm`, json('POST', { scope }));
+async function runLLM(kind, id, scope, keys = []) {
+  const r = await api(`/api/${kind}/${id}/llm`, json('POST', { scope, keys }));
   const m = modal(`<p>大模型处理中… 已完成 <span id="jp">0/1</span> 块<br><span class="muted">每块最多 20 题，多块并行；一块通常 20 到 60 秒。</span></p><div class="row" style="justify-content:flex-end"><button class="btn" id="jc">取消</button></div>`);
   let cancelled = false;
   $('#jc', m).onclick = async () => { cancelled = true; await api(`/api/jobs/${r.job}`, { method: 'DELETE' }); closeModal(); toast('已取消，试卷未改动'); };
@@ -165,12 +165,12 @@ async function runLLM(kind, id, scope) {
 }
 
 /* ---------------- 校正页 ---------------- */
-async function review(id) {
+async function review(id, startAt = null) {
   let kind = 'drafts';
   let d;
   try { d = await api(`/api/drafts/${id}`); } catch (e) { kind = 'papers'; d = await api(`/api/papers/${id}`); }
   const paper = d.paper;
-  let cur = Math.max(0, paper.questions.findIndex(q => !q.reviewed));
+  let cur = startAt !== null ? Math.min(startAt, paper.questions.length - 1) : Math.max(0, paper.questions.findIndex(q => !q.reviewed));
   let dirty = false;
 
   const render = () => {
@@ -245,7 +245,10 @@ async function review(id) {
       <div class="f"><label>选项 <label style="display:inline;font-size:12px"><input type="checkbox" id="e_image" ${q.image ? 'checked' : ''}> 图片题（作答时显示裁图，按字母选）</label></label>
         <div id="opts">${q.options.map((o, i) => `<div class="opt"><span class="L">${L(i)}</span><input type="text" data-o="${i}" value="${esc(o)}"><button class="btn small" data-ro="${i}" title="删除选项">×</button></div>`).join('')}</div>
         <button class="btn small" id="addopt">＋ 加选项</button></div>
-      <div class="row"><button class="btn primary" id="ok">标为已核对并下一题</button><span class="kbd">Ctrl+Enter 同样效果</span></div>`;
+      <div class="row"><button class="btn primary" id="ok">标为已核对并下一题</button>
+        <button class="btn" id="flag">${q.reviewed ? '标为待核对' : '取消待核对'}</button>
+        <button class="btn" id="llm1" ${d.llm ? '' : 'disabled'} title="只把这一题在原卷里的文字发给大模型重切">重切本题（大模型）</button>
+        <span class="kbd">Ctrl+Enter = 已核对并下一题</span></div>`;
     const upd = () => {
       q.unit = $('#e_unit').value.trim(); q.no = +$('#e_no').value || q.no; q.type = $('#e_type').value;
       q.blanks = +$('#e_blanks').value || 0; q.stem = $('#e_stem').value;
@@ -262,6 +265,12 @@ async function review(id) {
     $('#prev').onclick = () => { if (cur > 0) { cur--; render(); } };
     $('#next').onclick = () => { if (cur < paper.questions.length - 1) { cur++; render(); } };
     $('#ok').onclick = () => { upd(); q.reviewed = true; q.issues = []; if (cur < paper.questions.length - 1) cur++; render(); };
+    $('#flag').onclick = () => { upd(); q.reviewed = !q.reviewed; q.issues = q.reviewed ? [] : ['手动标为待核对']; dirty = true; render(); };
+    $('#llm1').onclick = async () => {
+      upd(); await save(true);
+      if (!await confirmBox(`把第 ${q.no} 题在原卷里的文字发送给大模型重切，只替换这一题。继续？`, '发送')) return;
+      try { await runLLM(kind, id, 'keys', [`${q.unit}|${q.no}`]); await review(id, cur); } catch (e) { if (e.message !== '已取消') toast('大模型失败：' + e.message, 5000); }
+    };
     ed.onkeydown = e => { if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); $('#ok').click(); } };
     $('#del').onclick = async () => { if (!await confirmBox('删除本题？', '删除')) return; paper.questions.splice(cur, 1); cur = Math.min(cur, paper.questions.length - 1); dirty = true; render(); };
     $('#add').onclick = () => { upd(); paper.questions.splice(cur + 1, 0, { unit: q.unit, no: q.no + 1, type: 'single', stem: '', options: ['', '', '', ''], blanks: 0, image: null, crop: null, group: null, material: null, reviewed: false, issues: ['新增的题'], page: q.page, y0: q.y0, end_page: q.end_page, y1: q.y1, source: q.source }); cur++; dirty = true; render(); };

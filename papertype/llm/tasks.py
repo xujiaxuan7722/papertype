@@ -60,6 +60,30 @@ def rewrite(text: str, mode: str, progress=None) -> str:
     return "\n\n".join(o.strip() for o in outs if o)
 
 
+def raw_span_text(paper: Paper, keys: list[str]) -> str:
+    """指定题目在原卷里的原始文字（pdf 文字层按坐标截取；其他来源退回解析后的题目文字）。"""
+    from ..store.files import assets_dir
+    src = assets_dir(paper.id) / "source.pdf"
+    if paper.import_path != "pdf-text" or not src.exists():
+        return questions_to_text(paper, only=keys)
+    from ..importers.pdf_import import extract_lines
+    lines = extract_lines(src)
+    qs = paper.questions
+    out = []
+    for i, q in enumerate(qs):
+        if q.key() not in keys or not q.page:
+            continue
+        nxt = qs[i + 1] if i + 1 < len(qs) else None
+        end = (nxt.page, nxt.y0) if nxt and nxt.page else (10 ** 6, 0)
+        start = (q.m_page, q.m_y0) if q.group and q.material is not None and q.m_page else (q.page, q.y0)
+        chunk = [l.text for l in lines if not l.image and start <= (l.page, l.y) < end]
+        if not chunk:
+            chunk = [f"{q.no}. {q.stem}"] + [f"{chr(65 + k)}. {o}" for k, o in enumerate(q.options)]
+        out.append("\n".join(chunk))
+        out.append("")
+    return "\n".join(out)
+
+
 def questions_to_text(paper: Paper, only: list[str] | None = None) -> str:
     """把（部分）题目还原成文本，供模型重切；only 为 key 列表。"""
     out, unit = [], None

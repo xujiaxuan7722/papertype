@@ -257,7 +257,8 @@ def ping():
 
 
 class LLMJobIn(BaseModel):
-    scope: str          # flagged / all / ocr_tidy
+    scope: str          # flagged / keys / all / ocr_tidy
+    keys: list[str] = []
 
 
 @app.post("/api/{kind}/{pid}/llm")
@@ -267,6 +268,10 @@ def llm_job(kind: str, pid: str, body: LLMJobIn):
         raise HTTPException(400, "大模型未启用：请先在设置里打开开关并填写密钥。")
     p = _get(kind, pid)
     flagged = [q.key() for q in p.questions if not q.reviewed]
+    if body.scope == "keys":
+        flagged = [k for k in body.keys if any(q.key() == k for q in p.questions)]
+        if not flagged:
+            raise HTTPException(400, "没有指定要重切的题。")
     if body.scope == "flagged" and not flagged:
         raise HTTPException(400, "没有待核对的题。")
     job_id = uuid.uuid4().hex[:8]
@@ -274,8 +279,8 @@ def llm_job(kind: str, pid: str, body: LLMJobIn):
 
     def run():
         try:
-            if body.scope == "flagged":
-                text = llm_tasks.questions_to_text(p, only=flagged)
+            if body.scope in ("flagged", "keys"):
+                text = llm_tasks.raw_span_text(p, flagged)
                 mode = "ocr_tidy" if p.import_path == "ocr" else "rechunk"
             else:
                 text = p.raw_text or llm_tasks.questions_to_text(p)
@@ -285,7 +290,7 @@ def llm_job(kind: str, pid: str, body: LLMJobIn):
                 JOBS[job_id].update(done=True, error="已取消，试卷未改动")
                 return
             newqs = llm_tasks.parse_model_output(out, p.import_path)
-            if body.scope == "flagged":
+            if body.scope in ("flagged", "keys"):
                 by = {(q.unit, q.no): q for q in newqs}
                 by_no = {q.no: q for q in newqs}
                 replaced = 0
@@ -295,6 +300,7 @@ def llm_job(kind: str, pid: str, body: LLMJobIn):
                         if n:
                             n.unit, n.crop, n.image = q.unit, q.crop, (q.image if n.image else q.image)
                             n.page, n.y0, n.end_page, n.y1 = q.page, q.y0, q.end_page, q.y1
+                            n.group, n.material, n.material_crop, n.m_page, n.m_y0 = q.group, q.material, q.material_crop, q.m_page, q.m_y0
                             p.questions[i] = n; replaced += 1
                 validate(p.questions)
                 for q in p.questions:
