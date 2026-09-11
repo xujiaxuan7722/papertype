@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from ..models import Line, Question
 from .validate import validate
 
-NUM_RE = re.compile(r"^\s*(\d{1,3})\s*[\.．、:：](?!\d(?!\d{3}\s*年))\s*")   # 允许 "2.2017 年…"：题号后紧跟年份
+NUM_RE = re.compile(r"^\s*(\d{1,3})\s*[\.．、:：](?!\d(?!\d{3}\s*[年～~\-—–]))\s*")   # 允许 "2.2017 年…" "16.2011～2017 年"：题号后紧跟年份
 NUM_LOOSE_RE = re.compile(r"(?=(\d{1,3})\s*[\.．、])")
 NUM_WORD_RE = re.compile(r"^\s*第\s*(\d{1,3})\s*题[\.．、:：]?\s*")
 UNIT_RE = re.compile(r"^\s*第\s*([一二三四五六七八九十\d]+)\s*(单元|部分|篇|卷)\s*[:：]?\s*(.*)$")
@@ -38,6 +38,7 @@ SECTION_TYPES = [
     (re.compile(r"简答|论述|问答|案例分析|计算题|材料分析"), "essay"),
     (re.compile(r"选词填空|完形填空|阅读理解|逻辑推理|判断推理|数字运算|数量关系|资料分析|言语理解|图形推理|思维策略|常识|定义判断|类比推理"), "single"),
 ]
+MATH_RE = re.compile(r"[⁰¹²³⁴⁵⁶⁷⁸⁹×÷√∑∫≈≠≤≥∠π°∞]|\d\s*/\s*\d|[\uE000-\uF8FF]|□")
 PUA_RE = re.compile(r"[\uE000-\uF8FF\uFFFD]")
 FORMULA_LINE_RE = re.compile(r"^[\d\s+\-×÷*/=().,（）％%^²³√…]{8,}$")
 TABLE_ROW_RE = re.compile(r"^[^\d]{1,24}?\s*(-?\d[\d.,%]*\s*){3,}$")   # 表格数据行："国有单位  43.32  -6.43  41.28"
@@ -341,7 +342,8 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             skipping_answer = True
             continue
         if p.kind == "other":
-            _rescue_number(p, last_no + 1)
+            if not (cur is not None and qmeta.get(id(cur), {}).get("inferred") and _rescue_number(p, last_no)):
+                _rescue_number(p, last_no + 1)
         if p.kind == "number" and cur is not None and p.number == last_no and qmeta.get(id(cur), {}).get("inferred"):
             # 推断出的题号之后真正的题号行出现：推断题的内容其实是材料，本行才是题干
             if cur.stem.strip() and not cur.options and (len(cur.stem) > 40 or MATERIAL_HINT_RE.search(cur.stem) or cur.image):
@@ -381,7 +383,7 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             continue    # 解析的跨页段落
         if skipping_answer and source != "text" and p.kind == "other" and last_no \
                 and (num_x is None or p.x >= num_x - max(3.0, p.height * 0.6)) \
-                and not (_looks_like_stem(p.text) or re.search(r"[（(]\s*[)）]", p.text)):
+                and (MATERIAL_HINT_RE.search(p.text[:40]) or not (_looks_like_stem(p.text) or re.search(r"[（(]\s*[)）]", p.text))):
             if ANALYSIS_BODY_RE.search(p.text):
                 continue                     # 与题目同缩进的解析段落
             skipping_answer = False          # 解析结束后的正文段落：下一组题的材料候选
@@ -565,6 +567,10 @@ def _finalize(questions: list[Question], qmeta: dict[int, dict]):
             else:
                 q.type = "blank"
                 q.blanks = max(q.blanks, 1)
+        # 数学符号题（分数、上标、运算符、公式对象）一律看图作答：题干或选项含这些符号
+        alltext = q.stem + "\n" + "\n".join(q.options)
+        if q.stem and MATH_RE.search(alltext):
+            q.image = q.image or "pending"
         # 公式对象：私有编码字符（Word 公式的运算符）或整行数字运算式 → 看图作答
         if q.stem and (PUA_RE.search(q.stem) or any(FORMULA_LINE_RE.match(l.strip()) for l in q.stem.splitlines()[1:])):
             q.image = q.image or "pending"
@@ -574,7 +580,7 @@ def _finalize(questions: list[Question], qmeta: dict[int, dict]):
         # 图片题：有图像对象且（题干很短或选项内容为空）
         if q.image == "pending":
             empty_opts = q.options and all(len(o.strip()) == 0 for o in q.options)
-            formula = PUA_RE.search(q.stem) or any(FORMULA_LINE_RE.match(l.strip()) for l in q.stem.splitlines())
+            formula = PUA_RE.search(q.stem) or any(FORMULA_LINE_RE.match(l.strip()) for l in q.stem.splitlines()) or MATH_RE.search(alltext)
             q.image = "yes" if (empty_opts or len(q.stem) < 40 or formula) else None
         if q.options and all(len(o.strip()) == 0 for o in q.options) and not q.image:
             q.image = "yes"

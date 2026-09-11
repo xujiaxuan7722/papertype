@@ -317,7 +317,14 @@ def llm_job(kind: str, pid: str, body: LLMJobIn):
             store.save_paper(p, kind)
             JOBS[job_id].update(done=True, result={"message": msg, "stats": pipeline.stats(p)})
         except Exception as e:  # noqa: BLE001
-            JOBS[job_id].update(done=True, error=str(e)[:300])
+            msg = str(e)[:300] or repr(e)[:300]
+            JOBS[job_id].update(done=True, error=msg)
+            try:
+                import time as _t
+                with open(config.data_dir() / "llm.log", "a", encoding="utf-8") as f:
+                    f.write(f"{_t.strftime('%Y-%m-%d %H:%M:%S')} job={job_id} scope={body.scope} paper={pid} ERROR {msg}\n")
+            except Exception:
+                pass
 
     threading.Thread(target=run, daemon=True).start()
     return {"job": job_id}

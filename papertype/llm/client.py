@@ -12,7 +12,7 @@ class LLMDisabled(Exception):
     pass
 
 
-def chat(messages: list[dict], temperature: float = 0.0, timeout: float = 120.0) -> str:
+def chat(messages: list[dict], temperature: float = 0.0, timeout: float = 240.0) -> str:
     if not llm_available():
         raise LLMDisabled("大模型未启用或未填写密钥")
     s = load_settings()
