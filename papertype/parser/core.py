@@ -41,6 +41,7 @@ SECTION_TYPES = [
 PUA_RE = re.compile(r"[\uE000-\uF8FF\uFFFD]")
 FORMULA_LINE_RE = re.compile(r"^[\d\s+\-×÷*/=().,（）％%^²³√…]{8,}$")
 TABLE_ROW_RE = re.compile(r"^[^\d]{1,24}?\s*(-?\d[\d.,%]*\s*){3,}$")   # 表格数据行："国有单位  43.32  -6.43  41.28"
+ANALYSIS_BODY_RE = re.compile(r"解得|可得|可知|则[有：:]|设[一-鿿a-zA-Z]{0,4}[为是]|排除|选项|答案|∴|综上|即可|[=＝]|故选|本题|考[查察]")
 SHORT_HEADING_RE = re.compile(r"[一-鿿A-Za-z]{2,8}(?:\s*[（(]\s*\d{1,3}\s*[)）])?")   # 如"数字推理（25）"
 CHART_LINE_RE = re.compile(r"^[\d\s.,%．，、:：\-—–~～/()（）]+$")
 MATERIAL_SECTIONS = re.compile(r"完形填空|阅读理解|资料分析|阅读材料")
@@ -228,6 +229,7 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
     last_no = 0
     num_x = None                      # 最近一个题号行的横坐标
     skipping_answer = False
+    pending_after_answer = False      # 当前 pending 是解析块之后收的（可能其实是解析）
     seen_first_question = False
 
     part_seq = 0
@@ -269,7 +271,8 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
         group_end = int(m.group(2)) if m else None
 
     def flush_pending_as_material():
-        nonlocal pending_other, pending_images
+        nonlocal pending_other, pending_images, pending_after_answer
+        pending_after_answer = False
         big_images = [x for x in pending_images if x.height >= 60]
         if not pending_other and not big_images:
             pending_images = []
@@ -278,6 +281,9 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
         clean = _material_text(pending_other)
         if not seen_first_question and not unit and not section and group_id is None and not big_images:
             pending_other, pending_images = [], []      # 卷首说明 / 题量表，不是材料
+            return
+        if not clean and not big_images:
+            pending_other, pending_images = [], []      # 只有分隔线 / 坐标数字之类的碎片，不是材料
             return
         if len(pending_other) >= 2 or MATERIAL_HINT_RE.search(text) or len(text) > 120 or big_images:
             firsts = pending_other + big_images
@@ -303,9 +309,14 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             section, section_type = "", "single"
             group_id, pending_other, pending_images, last_no, skipping_answer = None, [], [], 0, False
             continue
+        nxt_para = paras[idx + 1] if idx + 1 < len(paras) else None
+        before_restart = nxt_para is not None and nxt_para.kind == "number" and nxt_para.number == 1
         if p.kind == "section" and cur is None and not p.lines[0].is_heading and seen_first_question \
+                and not before_restart \
                 and (pending_other or (skipping_answer and not SECTION_RE.match(p.text))):
             p.kind = "other"          # 材料累积中的小标题 / 解析之后的无编号短行（图表单位、表头）不是分区标题
+        if p.kind == "section" and before_restart and pending_after_answer:
+            pending_other, pending_after_answer = [], False     # 分区标题前攒的是解析残余
         if p.kind == "section":
             if not seen_first_question and not title and not unit and p.lines and p.lines[0].is_heading:
                 title = p.text
@@ -369,7 +380,10 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
         if skipping_answer and source != "text" and p.kind == "other" and last_no \
                 and (num_x is None or p.x >= num_x - max(3.0, p.height * 0.6)) \
                 and not (_looks_like_stem(p.text) or re.search(r"[（(]\s*[)）]", p.text)):
+            if ANALYSIS_BODY_RE.search(p.text):
+                continue                     # 与题目同缩进的解析段落
             skipping_answer = False          # 解析结束后的正文段落：下一组题的材料候选
+            pending_after_answer = True
             pending_other.append(p)
             continue
         if skipping_answer and source != "text" and p.kind in ("other", "option") and last_no \
@@ -436,12 +450,16 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
                 cur_stage = "options"
             continue
         if p.kind == "image" and (cur is None or skipping_answer):
-            pending_images.append(p)
+            if not skipping_answer or p.height >= 150:      # 解析里的小插图不算材料；整页大图（资料）才算
+                pending_images.append(p)
             continue
         if skipping_answer:
             continue
         if cur is None:
             if p.kind == "other":
+                if pending_after_answer and (ANALYSIS_BODY_RE.search(p.text) or ANALYSIS_TAIL_RE.search(p.text)):
+                    pending_other, pending_after_answer, skipping_answer = [], False, True   # 原来是解析，不是材料
+                    continue
                 if seen_first_question or unit or section or group_id is not None:
                     pending_other.append(p)
             continue

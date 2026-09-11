@@ -268,6 +268,8 @@ def extract_lines(pdf_path: str | Path) -> list[Line]:
                 continue
             if len(t) <= 3 and any(t in rep for rep in repeated if not rep.startswith("IMG@")):
                 continue
+            if PUNCT_ONLY_RE.match(t) and len(t) >= 6:
+                continue                       # 分隔线之类的纯符号行
             edge = r.y < height * 0.07 or r.y > height * 0.92
             if edge and PAGE_NO_RE.match(r.text.strip()):
                 continue
