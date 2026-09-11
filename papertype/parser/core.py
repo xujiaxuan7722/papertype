@@ -210,6 +210,7 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
     cur: Question | None = None
     cur_stage = "stem"                # stem / options
     pending_other: list[Para] = []    # 选项之后、下一题之前的其他段落（候选材料）
+    pending_images: list[Para] = []   # 题目之间出现的图片（纯图片材料，如资料分析的图表）
     group_id: str | None = None
     group_seq = 0
     group_end: int | None = None      # 材料提示"回答 49～53 题"给出的结束题号
@@ -241,21 +242,25 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
         group_end = int(m.group(2)) if m else None
 
     def flush_pending_as_material():
-        nonlocal pending_other
-        if not pending_other:
+        nonlocal pending_other, pending_images
+        big_images = [x for x in pending_images if x.height >= 60]
+        if not pending_other and not big_images:
+            pending_images = []
             return
         text = "\n".join(x.text for x in pending_other)
-        if not seen_first_question and not unit and not section and group_id is None:
-            pending_other = []      # 卷首说明 / 题量表，不是材料
+        if not seen_first_question and not unit and not section and group_id is None and not big_images:
+            pending_other, pending_images = [], []      # 卷首说明 / 题量表，不是材料
             return
-        if len(pending_other) >= 2 or MATERIAL_HINT_RE.search(text) or len(text) > 120:
-            pos = (pending_other[0].page, pending_other[0].y)
-            if group_id and materials.get(group_id) == "":
+        if len(pending_other) >= 2 or MATERIAL_HINT_RE.search(text) or len(text) > 120 or big_images:
+            firsts = pending_other + big_images
+            first = min(firsts, key=lambda x: (x.page, x.y))
+            pos = (first.page, first.y)
+            if group_id and materials.get(group_id) == "" and group_id not in material_pos:
                 materials[group_id] = text.strip()   # "Text 1" 标记之后的正文
                 material_pos[group_id] = pos
             else:
                 start_group(text, pos)
-        pending_other = []
+        pending_other, pending_images = [], []
 
     for idx, p in enumerate(paras):
         if idx == 0 and p.kind == "other" and len(p.text) <= 30 and not title:
@@ -268,7 +273,7 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             if unit not in units:
                 units.append(unit)
             section, section_type = "", "single"
-            group_id, pending_other, last_no, skipping_answer = None, [], 0, False
+            group_id, pending_other, pending_images, last_no, skipping_answer = None, [], [], 0, False
             continue
         if p.kind == "section":
             if not seen_first_question and not title and not unit and p.lines and p.lines[0].is_heading:
@@ -277,7 +282,7 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             close_current(p.page, p.y)
             section = re.sub(r"^\s*[一二三四五六七八九十]+\s*[、\.．]\s*", "", p.text).strip()
             section_type = _section_type(section)
-            group_id, pending_other, skipping_answer = None, [], False
+            group_id, pending_other, pending_images, skipping_answer = None, [], [], False
             continue
         if p.kind == "mark":
             close_current(p.page, p.y)
@@ -292,7 +297,7 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             _rescue_number(p, last_no + 1)
         if p.kind == "number" and cur is not None and p.number == last_no and qmeta.get(id(cur), {}).get("inferred"):
             # 推断出的题号之后真正的题号行出现：推断题的内容其实是材料，本行才是题干
-            if cur.stem.strip() and not cur.options:
+            if cur.stem.strip() and not cur.options and (len(cur.stem) > 40 or MATERIAL_HINT_RE.search(cur.stem) or cur.image):
                 start_group(cur.stem, (cur.page, cur.y0))
                 cur.group = group_id
                 group_count = 1
@@ -311,8 +316,9 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             p.kind = "other"        # 材料 / 图表里的数字，不是题号
         if skipping_answer and source != "text" and p.kind in ("other", "option") and ANALYSIS_TAIL_RE.search(p.text) and len(p.text) < 120:
             continue    # 解析的零散尾巴
-        if skipping_answer and source != "text" and p.kind in ("other", "option") and last_no:
-            # 解析段落的续行已按缩进并入答案段；此处仍出现正文，说明下一题开始了但题号没识别出（多为公式图）
+        if skipping_answer and source != "text" and p.kind in ("other", "option") and last_no \
+                and (num_x is None or p.x >= num_x - max(3.0, p.height * 0.6)):
+            # 解析段落的续行已按缩进并入答案段；此处仍出现题目缩进的正文，说明下一题开始了但题号没识别出（多为公式图）
             close_current(p.page, p.y)
             cur = Question(unit=unit, no=last_no + 1, stem="" if p.kind == "option" else p.text,
                            page=p.page, y0=p.y, source=source)
@@ -354,6 +360,8 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             body = NUM_RE.sub("", p.text, count=1) if NUM_RE.match(p.text) else NUM_WORD_RE.sub("", p.text, count=1)
             cur = Question(unit=unit, no=p.number or 0, stem=body.strip(), page=p.page, y0=p.y, source=source)
             cur.blanks = p.blanks
+            if TYPE_MARK_RE.match(cur.stem):
+                group_id = None          # 题干自带【多选题】等标记 = 新的分区，材料组到此为止
             if group_id:
                 cap = 20 if MATERIAL_SECTIONS.search(section) else 6
                 if (group_end is not None and cur.no > group_end) or (group_end is None and group_count >= cap):
@@ -369,6 +377,9 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
                 cur.stem = cur.stem[:_first_option_pos(cur.stem)].strip()
                 cur.options = [o for _, o in opts]
                 cur_stage = "options"
+            continue
+        if p.kind == "image" and (cur is None or skipping_answer):
+            pending_images.append(p)
             continue
         if skipping_answer:
             continue
@@ -405,7 +416,7 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             q.material = materials.get(q.group) or None
             if q.group in material_pos:
                 q.m_page, q.m_y0 = material_pos[q.group]
-        if q.group and not materials.get(q.group):
+        if q.group and not materials.get(q.group) and q.group not in material_pos:
             q.group = None
     _finalize(questions, qmeta)
     validate(questions)

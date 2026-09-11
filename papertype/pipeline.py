@@ -130,7 +130,7 @@ def _crops_pdf(paper: Paper, pdf_path: Path, adir: Path) -> None:
     heights = {i + 1: p.rect.height for i, p in enumerate(doc)}
     doc.close()
     for q in paper.questions:
-        if q.material and q.m_page and (q.m_page, q.m_y0) < (q.page, q.y0):
+        if q.group and q.m_page and (q.m_page, q.m_y0) < (q.page, q.y0):
             name = f"m_{_safe(q.unit)}_{q.no}.png"
             try:
                 pdf_import.render_span(pdf_path, q.m_page, q.m_y0, q.page, q.y0, adir / name)

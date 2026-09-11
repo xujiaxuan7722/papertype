@@ -92,3 +92,13 @@ def test_icbc_span_ends_before_answer(icbc):
     q = by[35]                       # 图形题：裁图终点应是【答案】段起点，而不是下一题
     assert q.end_page == q.page and q.y0 < q.y1 < 520
     assert by[51].material and by[51].m_page == 22 and by[51].m_y0 > 500
+
+
+def test_icbc_material_groups(icbc):
+    groups = {}
+    for q in icbc.questions:
+        if q.group:
+            groups.setdefault(q.group, []).append(q.no)
+    assert list(groups.values()) == [[51, 52, 53, 54, 55], [56, 57, 58, 59, 60]]
+    by = {q.no: q for q in icbc.questions}
+    assert by[56].m_page == 26 and not by[56].material      # 纯图片材料：无文字，但有裁图位置

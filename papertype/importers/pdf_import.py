@@ -259,7 +259,8 @@ def extract_lines(pdf_path: str | Path) -> list[Line]:
         kept = []
         for r in rows:
             if r.image:
-                if _img_key(r) not in repeated:
+                near_edge = r.y + r.height < height * 0.1 or r.y > height * 0.9
+                if _img_key(r) not in repeated and not near_edge:
                     kept.append(r)
                 continue
             t = _norm(r.text)
