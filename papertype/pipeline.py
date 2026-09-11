@@ -111,13 +111,17 @@ def _build(pid: str, title: str, source: str, import_path: str, result, lines=No
 
 
 def _span_end(paper: Paper, i: int, q: Question) -> tuple[int, float, float | None]:
-    """本题裁图的结束位置：下一题起点（同页）或本页页尾 + 下一页顶部到下一题起点。"""
+    """本题裁图的结束位置：答案段起点（若有）或下一题起点；跨页时给出下一页的截止纵坐标。"""
+    end_page, end_y = q.page, 10 ** 6
     nxt = paper.questions[i + 1] if i + 1 < len(paper.questions) else None
-    if nxt and nxt.page == q.page:
-        return q.page, nxt.y0, None
-    if nxt and nxt.page == q.page + 1:
-        return q.page, 10 ** 6, nxt.y0
-    return q.page, 10 ** 6, None
+    if nxt and nxt.page in (q.page, q.page + 1):
+        end_page, end_y = nxt.page, nxt.y0
+    # 解析器在遇到【答案】/ 分区标题时把 y1 记为该段起点，比下一题起点更早
+    if q.end_page and q.y1 and (q.end_page, q.y1) < (end_page, end_y) and (q.end_page, q.y1) > (q.page, q.y0):
+        end_page, end_y = q.end_page, q.y1
+    if end_page == q.page:
+        return q.page, end_y, None
+    return q.page, 10 ** 6, end_y
 
 
 def _crops_pdf(paper: Paper, pdf_path: Path, adir: Path) -> None:
@@ -125,6 +129,14 @@ def _crops_pdf(paper: Paper, pdf_path: Path, adir: Path) -> None:
     doc = pymupdf.open(str(pdf_path))
     heights = {i + 1: p.rect.height for i, p in enumerate(doc)}
     doc.close()
+    for q in paper.questions:
+        if q.material and q.m_page and (q.m_page, q.m_y0) < (q.page, q.y0):
+            name = f"m_{_safe(q.unit)}_{q.no}.png"
+            try:
+                pdf_import.render_span(pdf_path, q.m_page, q.m_y0, q.page, q.y0, adir / name)
+                q.material_crop = name
+            except Exception:
+                q.material_crop = None
     for i, q in enumerate(paper.questions):
         if not q.page:
             continue

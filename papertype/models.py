@@ -33,6 +33,9 @@ class Question:
     crop: Optional[str] = None   # 每题的原文裁剪图（校正页参考）
     group: Optional[str] = None  # 材料题分组 id
     material: Optional[str] = None  # 分组材料文本（组内第一题带，其余引用 group）
+    material_crop: Optional[str] = None  # 材料的裁图（含图表时有用）
+    m_page: int = 0                 # 材料起点（供裁图）
+    m_y0: float = 0.0
     reviewed: bool = True        # False = 待核对
     issues: list[str] = field(default_factory=list)  # 校验说明
     page: int = 0

@@ -78,3 +78,17 @@ def test_icbc_types_and_images(icbc):
     assert by[53].options[0].startswith("不足1%")
     assert by[51].group and by[51].material and by[52].group == by[51].group
     assert Counter(len(q.options) for q in icbc.questions)[4] >= 78
+
+
+def test_icbc_superscript_and_fractions(icbc):
+    by = {q.no: q for q in icbc.questions}
+    assert "2000²-1999²+1" in by[40].stem and "1000²-999²+1" in by[40].stem
+    assert by[37].stem.startswith("300 6/11") and "57 57/99" in by[37].stem and "15 15/99" in by[37].stem
+    assert by[36].options == ["1/2", "1/28", "1/9", "1/7"]
+
+
+def test_icbc_span_ends_before_answer(icbc):
+    by = {q.no: q for q in icbc.questions}
+    q = by[35]                       # 图形题：裁图终点应是【答案】段起点，而不是下一题
+    assert q.end_page == q.page and q.y0 < q.y1 < 520
+    assert by[51].material and by[51].m_page == 22 and by[51].m_y0 > 500

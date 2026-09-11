@@ -296,6 +296,7 @@ async function take(id, mode) {
   const st = takeState = { answers: cached ? cached.answers : (saved.answers || {}), marks: new Set(cached ? cached.marks : (saved.marks || [])), cur: 0, dirty: !!cached, timer: null, debounce: null };
   ANSWER_CACHE[id] = { answers: st.answers, marks: [] };
   const materialOf = q => { if (!q.group) return null; const first = qs.find(x => x.group === q.group && x.material); return first ? first.material : null; };
+  const materialImg = q => { if (!q.group) return ''; const first = qs.find(x => x.group === q.group && x.material_crop); return first ? `<img class="pic" src="/assets/${id}/${encodeURIComponent(first.material_crop)}" alt="材料原图">` : ''; };
   const persist = async () => { if (ANSWER_CACHE[id]) ANSWER_CACHE[id].marks = [...st.marks]; if (!st.dirty) return; st.dirty = false; try { await api(`/api/papers/${id}/answers`, json('PUT', { answers: st.answers, marks: [...st.marks], mode })); } catch (e) { st.dirty = true; } };
   st.persist = persist;
   st.timer = setInterval(persist, 10000);
@@ -372,7 +373,7 @@ async function take(id, mode) {
     const mat = materialOf(q);
     app.innerHTML = `<div class="take"><div>
       <div class="qbox"><div class="head"><span>${esc(q.unit || p.title)} · 第 ${q.no} 题 · ${TYPE[q.type]}${q.type === 'multi' ? '（可多选）' : ''}</span><button class="btn small" id="mark">${st.marks.has(key(q)) ? '★ 已标记' : '☆ 标记'}</button></div>
-        ${mat ? `<div class="material">${esc(mat)}</div>` : ''}
+        ${mat ? `<details class="material" ${materialImg(q) ? '' : 'open'}><summary>材料文字（点开 / 收起）</summary>${esc(mat)}</details>${materialImg(q)}` : ''}
         <div class="stem"><span class="muted">${q.no}.</span> ${esc(q.stem)}</div>
         <div class="ans">${optionsHtml(q, i)}</div></div>
       <div class="bar"><button class="btn" id="prev" ${i === 0 ? 'disabled' : ''}>上一题</button><button class="btn" id="next" ${i === qs.length - 1 ? 'disabled' : ''}>下一题</button>
@@ -391,7 +392,7 @@ async function take(id, mode) {
     app.innerHTML = `<div class="take"><div class="sheet"><h1>${esc(p.title)}</h1>
       ${qs.map((q, i) => { let h = ''; if (q.unit !== lastUnit) { lastUnit = q.unit; h += `<div class="unit">${esc(q.unit)}</div>`; }
         const mat = (q.group && qs.find(x => x.group === q.group) === q) ? q.material : null;
-        return h + `${mat ? `<div class="material">${esc(mat)}</div>` : ''}<div class="q" data-i="${i}"><div class="row" style="justify-content:space-between"><div class="stem"><span class="no">${q.no}.</span>${esc(q.stem)} <span class="muted">[${TYPE[q.type]}]</span></div><button class="btn small mk">${st.marks.has(key(q)) ? '★ 已标记' : '☆ 标记'}</button></div><div class="ans">${optionsHtml(q, i)}</div></div>`; }).join('')}
+        return h + `${mat ? `<details class="material" ${materialImg(q) ? '' : 'open'}><summary>材料文字（点开 / 收起）</summary>${esc(mat)}</details>${materialImg(q)}` : ''}<div class="q" data-i="${i}"><div class="row" style="justify-content:space-between"><div class="stem"><span class="no">${q.no}.</span>${esc(q.stem)} <span class="muted">[${TYPE[q.type]}]</span></div><button class="btn small mk">${st.marks.has(key(q)) ? '★ 已标记' : '☆ 标记'}</button></div><div class="ans">${optionsHtml(q, i)}</div></div>`; }).join('')}
       </div>${side}</div>`;
     bind(app);
     app.querySelectorAll('.sheet .q .mk').forEach(b => b.onclick = () => { const q = qs[+b.closest('.q').dataset.i]; const k = key(q); st.marks.has(k) ? st.marks.delete(k) : st.marks.add(k); touch(); refresh(); });

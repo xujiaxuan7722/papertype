@@ -77,6 +77,8 @@ td.n{font-variant-numeric:tabular-nums}
 .qbox{border:1px solid var(--rule);background:#fff;border-radius:6px;padding:18px 22px;min-height:50vh}
 .qbox .head{display:flex;justify-content:space-between;align-items:center;color:var(--ink-2);font-size:13px;margin-bottom:8px}
 .qbox .stem{font-size:16px;white-space:pre-wrap;margin-bottom:12px}
+.material summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-bottom:4px}
+.sheet .material{background:var(--paper-2);padding:10px 12px;border-radius:4px;white-space:pre-wrap;font-size:14px;margin:8px 0}
 .qbox .material{background:var(--paper-2);padding:10px 12px;border-radius:4px;white-space:pre-wrap;font-size:14px;margin-bottom:12px;max-height:40vh;overflow:auto}
 .qbox img.pic{max-width:100%;border:1px solid var(--rule);margin-bottom:10px}
 .opts .o{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--rule);border-radius:4px;margin-bottom:8px;cursor:pointer;background:#fff}

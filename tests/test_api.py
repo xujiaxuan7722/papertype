@@ -23,6 +23,8 @@ def test_import_pdf_review_confirm_take_submit(client):
     d = r.json(); pid = d["paper"]["id"]
     assert d["stats"]["count"] == 80 and d["stats"]["with_image"] >= 6
     assert d["paper"]["questions"][23]["crop"]      # 图形题有裁图
+    q51 = d["paper"]["questions"][50]
+    assert q51["material_crop"] and client.get(f"/assets/{pid}/{q51['material_crop']}").status_code == 200
     assert client.get(f"/assets/{pid}/{d['paper']['questions'][23]['crop']}").status_code == 200
     assert client.get("/api/papers").json()["drafts"][0]["id"] == pid
 

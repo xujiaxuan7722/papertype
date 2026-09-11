@@ -227,11 +227,15 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
         questions.append(cur)
         cur, cur_stage = None, "stem"
 
-    def start_group(text: str):
+    material_pos: dict[str, tuple[int, float]] = {}
+
+    def start_group(text: str, pos: tuple[int, float] | None = None):
         nonlocal group_id, group_seq, group_end, group_count
         group_seq += 1
         group_id = f"g{group_seq}"
         materials[group_id] = text.strip()
+        if pos:
+            material_pos[group_id] = pos
         group_count = 0
         m = re.search(r"回答\s*(\d+)\s*[～~\-—至到]\s*(\d+)\s*题", text)
         group_end = int(m.group(2)) if m else None
@@ -245,10 +249,12 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             pending_other = []      # 卷首说明 / 题量表，不是材料
             return
         if len(pending_other) >= 2 or MATERIAL_HINT_RE.search(text) or len(text) > 120:
+            pos = (pending_other[0].page, pending_other[0].y)
             if group_id and materials.get(group_id) == "":
                 materials[group_id] = text.strip()   # "Text 1" 标记之后的正文
+                material_pos[group_id] = pos
             else:
-                start_group(text)
+                start_group(text, pos)
         pending_other = []
 
     for idx, p in enumerate(paras):
@@ -287,7 +293,7 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
         if p.kind == "number" and cur is not None and p.number == last_no and qmeta.get(id(cur), {}).get("inferred"):
             # 推断出的题号之后真正的题号行出现：推断题的内容其实是材料，本行才是题干
             if cur.stem.strip() and not cur.options:
-                start_group(cur.stem)
+                start_group(cur.stem, (cur.page, cur.y0))
                 cur.group = group_id
                 group_count = 1
             cur.stem = (NUM_RE.sub("", p.text, count=1) if NUM_RE.match(p.text) else NUM_WORD_RE.sub("", p.text, count=1)).strip()
@@ -397,6 +403,8 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
         if q.group and q.group not in seen:
             seen.add(q.group)
             q.material = materials.get(q.group) or None
+            if q.group in material_pos:
+                q.m_page, q.m_y0 = material_pos[q.group]
         if q.group and not materials.get(q.group):
             q.group = None
     _finalize(questions, qmeta)
