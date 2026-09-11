@@ -50,7 +50,7 @@ def _ask(chunk: str, mode: str) -> str:
 def rewrite(text: str, mode: str, progress=None) -> str:
     chunks = _chunks(text)
     outs = [None] * len(chunks)
-    with ThreadPoolExecutor(max_workers=min(4, len(chunks))) as ex:
+    with ThreadPoolExecutor(max_workers=min(2, len(chunks))) as ex:
         futs = {ex.submit(_ask, c, mode): i for i, c in enumerate(chunks)}
         for f in futs:
             i = futs[f]

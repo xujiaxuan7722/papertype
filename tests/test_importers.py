@@ -88,3 +88,32 @@ def test_ocr_samples():
     assert len(r2.questions) == 6 and all(len(q.options) == 4 for q in r2.questions)
     assert r2.questions[4].options == ["3%", "3.3%", "4.5%", "3.8%"]
     assert r2.title == "中国建设银行笔试模拟卷" and r2.units == ["职业基础知识测试"]
+
+
+def test_numbering_restart_and_table_rows():
+    text = """数量关系（3）
+1. 甲题
+A. a
+B. b
+2. 乙题
+A. a
+B. b
+3. 丙题
+A. a
+B. b
+资料分析（2）
+请回答1～2题。
+一、按经济类型分组
+1.国有单位  43.32  -6.43  41.28  -6.29
+2.城镇集体单位  30.71  -1.30  29.02  -0.99
+1.2016 年第3 季末国有单位有在岗人员（）人。
+A. 1
+B. 2
+2.下列说法正确的是（）。
+A. x
+B. y
+"""
+    from papertype.importers import text_import
+    r = parse_lines(text_import.extract_lines(text), source="text")
+    assert [(q.unit, q.no) for q in r.questions] == [("数量关系（3）", 1), ("数量关系（3）", 2), ("数量关系（3）", 3), ("资料分析（2）", 1), ("资料分析（2）", 2)]
+    assert r.questions[3].group and "国有单位  43.32" in r.questions[3].material

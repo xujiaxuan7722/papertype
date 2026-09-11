@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from ..models import Line, Question
 from .validate import validate
 
-NUM_RE = re.compile(r"^\s*(\d{1,3})\s*[\.．、:：](?!\d)\s*")
+NUM_RE = re.compile(r"^\s*(\d{1,3})\s*[\.．、:：](?!\d(?!\d{3}\s*年))\s*")   # 允许 "2.2017 年…"：题号后紧跟年份
 NUM_LOOSE_RE = re.compile(r"(?=(\d{1,3})\s*[\.．、])")
 NUM_WORD_RE = re.compile(r"^\s*第\s*(\d{1,3})\s*题[\.．、:：]?\s*")
 UNIT_RE = re.compile(r"^\s*第\s*([一二三四五六七八九十\d]+)\s*(单元|部分|篇|卷)\s*[:：]?\s*(.*)$")
@@ -21,7 +21,7 @@ LETTER_ROW_RE = re.compile(r"^\s*A(\s+[B-G])+\s*$")
 OPTION_ANY_RE = re.compile(r"([A-G])(?:\s*[\.．、]|\s+(?![项选正错和或与])(?=[一-鿿\d]))")
 ANSWER_RE = re.compile(r"^\s*(【\s*(答案|参考答案|正确答案)\s*】|(答案|参考答案|正确答案|解析|答案解析|【解析】|【答案解析】)\s*[:：]?)")
 ANALYSIS_RE = re.compile(r"^\s*(【\s*解析\s*】|解析\s*[:：])")
-ANALYSIS_TAIL_RE = re.compile(r"故本题|正确答案|答案[为选是]|排除\s*[A-G]|[选为]\s*[A-G]\s*[。．]")
+ANALYSIS_TAIL_RE = re.compile(r"故本题|正确答案|答案[为选是]|排除\s*[A-G]|[选为]\s*[A-G]\s*[。．]|^[A-G]\s*项[，,、：:]|错误[，。]排除|正确[，。]排除|由(表格|材料|题干|图表?|文段)可知|(正确|错误)[。；;]")
 INLINE_ANSWER_RE = re.compile(r"[（(]\s*([A-G]{1,4})\s*[)）]")
 BLANK_RUN_RE = re.compile(r"[_＿]{2,}")
 PAREN_BLANK_RE = re.compile(r"[（(]\s{2,}[)）]")
@@ -40,7 +40,8 @@ SECTION_TYPES = [
 ]
 PUA_RE = re.compile(r"[\uE000-\uF8FF\uFFFD]")
 FORMULA_LINE_RE = re.compile(r"^[\d\s+\-×÷*/=().,（）％%^²³√…]{8,}$")
-SHORT_HEADING_RE = re.compile(r"[一-鿿A-Za-z]{2,8}")
+TABLE_ROW_RE = re.compile(r"^[^\d]{1,24}?\s*(-?\d[\d.,%]*\s*){3,}$")   # 表格数据行："国有单位  43.32  -6.43  41.28"
+SHORT_HEADING_RE = re.compile(r"[一-鿿A-Za-z]{2,8}(?:\s*[（(]\s*\d{1,3}\s*[)）])?")   # 如"数字推理（25）"
 CHART_LINE_RE = re.compile(r"^[\d\s.,%．，、:：\-—–~～/()（）]+$")
 MATERIAL_SECTIONS = re.compile(r"完形填空|阅读理解|资料分析|阅读材料")
 MULTI_STEM_RE = re.compile(r"多项|多选|有哪些|包括哪些|正确的有|错误的有|不定项")
@@ -150,6 +151,9 @@ def _classify(p: Para, ln: Line):
         p.kind = "number"; p.number = ln.number; return
     m = NUM_RE.match(t) or NUM_WORD_RE.match(t)
     if m:
+        rest = t[m.end():]
+        if TABLE_ROW_RE.match(rest):
+            p.kind = "other"; return          # 带编号的表格数据行，不是题目
         p.kind = "number"; p.number = int(m.group(1)); return
     if OPTION_HEAD_RE.match(t) or LETTER_ROW_RE.match(t):
         p.kind = "option"; return
@@ -172,6 +176,8 @@ def _rescue_number(p: Para, expected: int) -> bool:
             end = m.start() + len(m.group(1))
             rest = p.text[end:]
             rest = re.sub(r"^\s*[\.．、]\s*", "", rest, count=1)
+            if TABLE_ROW_RE.match(rest.split("\n")[0]):
+                return False               # 带编号的表格数据行
             p.kind = "number"; p.number = expected
             p.text = (p.text[:m.start()] + rest).strip()
             return True
@@ -223,6 +229,23 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
     num_x = None                      # 最近一个题号行的横坐标
     skipping_answer = False
     seen_first_question = False
+
+    part_seq = 0
+    section_of_first = ""
+    section_after_q = False
+
+    def open_auto_unit():
+        """没有单元标题但题号重新从 1 开始：自动开一个单元，名字取最近的分区标题，否则"第 N 部分"。"""
+        nonlocal unit, part_seq, group_id
+        part_seq += 1
+        base = section if (section and section_after_q) else (unit.split("·")[0] if unit else f"第{part_seq}部分")
+        name = base
+        k = 2
+        while name in units:
+            name = f"{base}·{k}"; k += 1
+        unit = name
+        units.append(unit)
+        group_id = None                    # 攒着的材料段落保留，归到新单元的第一题
 
     def close_current(end_page: int, end_y: float):
         nonlocal cur, cur_stage
@@ -280,9 +303,9 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             section, section_type = "", "single"
             group_id, pending_other, pending_images, last_no, skipping_answer = None, [], [], 0, False
             continue
-        if p.kind == "section" and pending_other and cur is None and not p.lines[0].is_heading \
-                and MATERIAL_HINT_RE.search("\n".join(x.text for x in pending_other)):
-            p.kind = "other"          # 材料正在累积，中间冒出的短行（如图表单位"亿元 %"）不是标题
+        if p.kind == "section" and cur is None and not p.lines[0].is_heading and seen_first_question \
+                and (pending_other or (skipping_answer and not SECTION_RE.match(p.text))):
+            p.kind = "other"          # 材料累积中的小标题 / 解析之后的无编号短行（图表单位、表头）不是分区标题
         if p.kind == "section":
             if not seen_first_question and not title and not unit and p.lines and p.lines[0].is_heading:
                 title = p.text
@@ -290,6 +313,9 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             close_current(p.page, p.y)
             section = re.sub(r"^\s*[一二三四五六七八九十]+\s*[、\.．]\s*", "", p.text).strip()
             section_type = _section_type(section)
+            if not seen_first_question and not unit:
+                section_of_first = section
+            section_after_q = True
             group_id, pending_other, pending_images, skipping_answer = None, [], [], False
             continue
         if p.kind == "mark":
@@ -322,8 +348,30 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             continue
         if p.kind == "number" and last_no and p.number not in (1, last_no + 1, last_no + 2, last_no + 3):
             p.kind = "other"        # 材料 / 图表里的数字，不是题号
+        if p.kind == "number" and p.number == 1 and last_no >= 3:
+            close_current(p.page, p.y)
+            if not unit:
+                part_seq_before = part_seq
+                # 第一次重排时，把前面的题补进"第 1 部分"
+                first_name = section_of_first or "第1部分"
+                for q in questions:
+                    if not q.unit:
+                        q.unit = first_name
+                if first_name not in units:
+                    units.insert(0, first_name)
+                part_seq = 1
+            open_auto_unit()
+            last_no = 0
         if skipping_answer and source != "text" and p.kind in ("other", "option") and ANALYSIS_TAIL_RE.search(p.text) and len(p.text) < 120:
             continue    # 解析的零散尾巴
+        if skipping_answer and source != "text" and p.kind == "other" and ANALYSIS_TAIL_RE.search(p.text):
+            continue    # 解析的跨页段落
+        if skipping_answer and source != "text" and p.kind == "other" and last_no \
+                and (num_x is None or p.x >= num_x - max(3.0, p.height * 0.6)) \
+                and not (_looks_like_stem(p.text) or re.search(r"[（(]\s*[)）]", p.text)):
+            skipping_answer = False          # 解析结束后的正文段落：下一组题的材料候选
+            pending_other.append(p)
+            continue
         if skipping_answer and source != "text" and p.kind in ("other", "option") and last_no \
                 and (num_x is None or p.x >= num_x - max(3.0, p.height * 0.6)):
             # 解析段落的续行已按缩进并入答案段；此处仍出现题目缩进的正文，说明下一题开始了但题号没识别出（多为公式图）
@@ -368,6 +416,7 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             body = NUM_RE.sub("", p.text, count=1) if NUM_RE.match(p.text) else NUM_WORD_RE.sub("", p.text, count=1)
             cur = Question(unit=unit, no=p.number or 0, stem=body.strip(), page=p.page, y0=p.y, source=source)
             cur.blanks = p.blanks
+            section_after_q = False
             if TYPE_MARK_RE.match(cur.stem):
                 group_id = None          # 题干自带【多选题】等标记 = 新的分区，材料组到此为止
             if group_id:
