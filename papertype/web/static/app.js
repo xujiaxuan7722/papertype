@@ -224,7 +224,8 @@ async function review(id, startAt = null) {
     const q = paper.questions[cur];
     const ed = $('#editor');
     if (!q) { ed.innerHTML = '<p class="muted">没有题目</p>'; return; }
-    const img = q.crop ? `<img class="crop" src="/assets/${id}/${encodeURIComponent(q.crop)}" alt="原文裁图">` : '';
+    const cropName = (q.image && q.image !== 'yes' && q.image !== 'pending') ? q.image : q.crop;
+    const img = cropName ? `<div class="cropwrap"><img class="crop" id="cropimg" src="/assets/${id}/${encodeURIComponent(cropName)}" alt="原文裁图"><button class="btn small" id="editcrop" title="拖框选出要保留的区域，把答案等内容裁掉">编辑裁图</button></div>` : '';
     ed.innerHTML = `
       <div class="row" style="justify-content:space-between;margin-bottom:8px">
         <div><b>第 ${cur + 1} / ${paper.questions.length} 题</b> ${q.reviewed ? '<span class="tag ok">已核对</span>' : '<span class="tag seal">待核对</span>'}</div>
@@ -262,6 +263,7 @@ async function review(id, startAt = null) {
     ed.querySelectorAll('input,select,textarea').forEach(el => el.addEventListener('input', upd));
     ed.querySelectorAll('[data-ro]').forEach(b => b.onclick = () => { upd(); q.options.splice(+b.dataset.ro, 1); renderEditor(); });
     $('#addopt').onclick = () => { upd(); q.options.push(''); renderEditor(); };
+    if ($('#editcrop')) $('#editcrop').onclick = () => editCrop(kind, id, cur, $('#cropimg').src, () => { save(true).then(() => render()); });
     $('#prev').onclick = () => { if (cur > 0) { cur--; render(); } };
     $('#next').onclick = () => { if (cur < paper.questions.length - 1) { cur++; render(); } };
     $('#ok').onclick = () => { upd(); q.reviewed = true; q.issues = []; if (cur < paper.questions.length - 1) cur++; render(); };
@@ -283,6 +285,40 @@ async function review(id, startAt = null) {
   };
   render();
   window.onbeforeunload = () => dirty ? '有未保存的修改' : null;
+}
+
+/* 裁图编辑：拖框选保留区域 */
+function editCrop(kind, id, index, src, onDone) {
+  const m = modal(`<h3 style="margin-top:0">编辑裁图</h3><p class="muted" style="margin:0 0 8px">在图上按住鼠标拖一个框，框内保留、框外裁掉。松开后可重新拖。</p>
+    <div style="overflow:auto;max-height:60vh;border:1px solid var(--rule)"><canvas id="cc" style="display:block;cursor:crosshair"></canvas></div>
+    <div class="row" style="justify-content:flex-end;margin-top:10px"><span class="muted" id="csel" style="margin-right:auto">未选择</span><button class="btn" id="creset">重置</button><button class="btn" id="ccancel">取消</button><button class="btn primary" id="csave" disabled>保存</button></div>`);
+  m.querySelector('.box').style.maxWidth = '960px';
+  const cv = $('#cc', m), ctx = cv.getContext('2d');
+  const im = new Image(); let scale = 1, sel = null, drag = null;
+  const draw = () => {
+    ctx.clearRect(0, 0, cv.width, cv.height); ctx.drawImage(im, 0, 0, cv.width, cv.height);
+    if (sel) {
+      ctx.fillStyle = 'rgba(28,33,41,.45)'; ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.clearRect(sel.x, sel.y, sel.w, sel.h); ctx.drawImage(im, sel.x / scale, sel.y / scale, sel.w / scale, sel.h / scale, sel.x, sel.y, sel.w, sel.h);
+      ctx.strokeStyle = '#A8322B'; ctx.lineWidth = 2; ctx.strokeRect(sel.x + 1, sel.y + 1, sel.w - 2, sel.h - 2);
+    }
+    $('#csel', m).textContent = sel ? `保留 ${Math.round(sel.w / scale)} × ${Math.round(sel.h / scale)} 像素` : '未选择';
+    $('#csave', m).disabled = !(sel && sel.w > 10 && sel.h > 10);
+  };
+  im.onload = () => { const maxW = Math.min(900, window.innerWidth - 80); scale = Math.min(1, maxW / im.naturalWidth); cv.width = Math.round(im.naturalWidth * scale); cv.height = Math.round(im.naturalHeight * scale); draw(); };
+  im.src = src + (src.includes('?') ? '&' : '?') + 't=' + Date.now();
+  const pos = e => { const r = cv.getBoundingClientRect(); return { x: Math.max(0, Math.min(cv.width, e.clientX - r.left)), y: Math.max(0, Math.min(cv.height, e.clientY - r.top)) }; };
+  cv.onmousedown = e => { drag = pos(e); sel = null; draw(); };
+  cv.onmousemove = e => { if (!drag) return; const p = pos(e); sel = { x: Math.min(drag.x, p.x), y: Math.min(drag.y, p.y), w: Math.abs(p.x - drag.x), h: Math.abs(p.y - drag.y) }; draw(); };
+  window.onmouseup = () => { drag = null; };
+  $('#creset', m).onclick = () => { sel = null; draw(); };
+  $('#ccancel', m).onclick = closeModal;
+  $('#csave', m).onclick = async () => {
+    try {
+      await api(`/api/${kind}/${id}/questions/${index}/crop`, json('PUT', { x0: sel.x / scale, y0: sel.y / scale, x1: (sel.x + sel.w) / scale, y1: (sel.y + sel.h) / scale }));
+      closeModal(); toast('裁图已更新'); onDone();
+    } catch (e) { toast('保存失败：' + e.message, 4000); }
+  };
 }
 
 /* ---------------- 试卷详情 ---------------- */

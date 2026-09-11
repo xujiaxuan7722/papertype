@@ -65,6 +65,8 @@ td.n{font-variant-numeric:tabular-nums}
 .qlist .q .no{font-family:var(--mono);min-width:28px;color:var(--ink-2)}
 .qlist .q .s{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex:1}
 .editor{border:1px solid var(--rule);background:#fff;border-radius:6px;padding:14px 16px}
+.cropwrap{position:relative;display:inline-block;max-width:100%}
+.cropwrap #editcrop{position:absolute;right:8px;top:8px;background:#fff}
 .editor .crop{max-width:100%;border:1px solid var(--rule);background:#fff;margin-bottom:10px}
 .editor .issues{background:var(--seal-soft);color:var(--seal);padding:6px 10px;border-radius:4px;margin-bottom:10px;font-size:13px}
 .editor .f{margin-bottom:10px}

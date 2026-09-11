@@ -149,6 +149,44 @@ def _kind(kind: str):
         raise HTTPException(404)
 
 
+class CropIn(BaseModel):
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+@app.put("/api/{kind}/{pid}/questions/{index}/crop")
+def recrop(kind: str, pid: str, index: int, body: CropIn):
+    """手动改裁图：按图片像素坐标裁出保留区域，另存新文件并挂回题目。"""
+    from PIL import Image
+    import time as _t
+    _kind(kind)
+    p = _get(kind, pid)
+    if not 0 <= index < len(p.questions):
+        raise HTTPException(404, "题目不存在")
+    q = p.questions[index]
+    src_name = q.image if (q.image and q.image not in ("yes", "pending")) else q.crop
+    if not src_name:
+        raise HTTPException(400, "这道题没有裁图")
+    src = store.assets_dir(pid) / Path(src_name).name
+    if not src.exists():
+        raise HTTPException(404, "裁图文件不存在")
+    im = Image.open(src)
+    x0, y0 = max(0, int(body.x0)), max(0, int(body.y0))
+    x1, y1 = min(im.width, int(body.x1)), min(im.height, int(body.y1))
+    if x1 - x0 < 10 or y1 - y0 < 10:
+        raise HTTPException(400, "选区太小")
+    base = Path(src_name).name.split("_c")[0].rsplit(".", 1)[0]
+    new_name = f"{base}_c{int(_t.time())}.png"
+    im.crop((x0, y0, x1, y1)).save(store.assets_dir(pid) / new_name)
+    q.crop = new_name
+    if q.image:
+        q.image = new_name
+    store.save_paper(p, kind)
+    return {"crop": new_name, "image": q.image}
+
+
 @app.get("/assets/{pid}/{name}")
 def asset(pid: str, name: str):
     f = store.assets_dir(pid) / Path(name).name

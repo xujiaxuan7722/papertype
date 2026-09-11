@@ -99,3 +99,19 @@ def test_settings_and_llm_gate(client):
     pid = client.post("/api/import", data={"mode": "text", "text": text}).json()["paper"]["id"]
     r = client.post(f"/api/drafts/{pid}/llm", json={"scope": "all"})
     assert r.status_code == 400 and "未启用" in r.json()["detail"]
+
+
+def test_recrop_question(client):
+    with open(FIX / "icbc.pdf", "rb") as f:
+        d = client.post("/api/import", data={"mode": "file", "title": ""}, files=[("files", ("icbc.pdf", f, "application/pdf"))]).json()
+    pid = d["paper"]["id"]
+    q = d["paper"]["questions"][34]          # 第 35 题（图形题）
+    assert q["image"]
+    r = client.put(f"/api/drafts/{pid}/questions/34/crop", json={"x0": 0, "y0": 0, "x1": 500, "y1": 200})
+    assert r.status_code == 200 and r.json()["crop"].endswith(".png") and r.json()["image"] == r.json()["crop"]
+    from PIL import Image
+    from papertype.store.files import assets_dir
+    im = Image.open(assets_dir(pid) / r.json()["crop"])
+    assert im.size == (500, 200)
+    assert client.get(f"/api/drafts/{pid}").json()["paper"]["questions"][34]["crop"] == r.json()["crop"]
+    assert client.put(f"/api/drafts/{pid}/questions/34/crop", json={"x0": 0, "y0": 0, "x1": 5, "y1": 5}).status_code == 400
