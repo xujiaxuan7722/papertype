@@ -108,10 +108,10 @@ def _merge_paragraphs(lines: list[Line]) -> list[Para]:
         starts_new = hard_new or short_heading
         if prev and not prev.image and not starts_new and ln.source in ("pdf", "ocr", "docx"):
             prev_last = NUM_RE.sub("", prev.lines[-1].text, count=1) if prev.lines else prev.text
-            if ln.page != prev.page and prev.kind != "option" and not _ends_sentence(prev.text) \
-                    and not TABLE_ROW_RE.match(prev_last.strip()) and not MATERIAL_HINT_RE.match(text):
+            blocked = TABLE_ROW_RE.match(prev_last.strip()) or MATERIAL_HINT_RE.search(text)   # 表格行之后 / 材料提示语之前不续行
+            if ln.page != prev.page and prev.kind != "option" and not _ends_sentence(prev.text) and not blocked:
                 _append(prev, ln); continue
-            if abs(ln.x - prev.x) <= tol and prev.kind == "other" and not _ends_sentence(prev.text):
+            if abs(ln.x - prev.x) <= tol and prev.kind == "other" and not _ends_sentence(prev.text) and not blocked:
                 _append(prev, ln); continue
         if prev and not prev.image and not starts_new and ln.source == "text":
             if prev.kind in ("number", "other") and not _ends_sentence(prev.text):
