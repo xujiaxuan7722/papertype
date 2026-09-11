@@ -73,7 +73,10 @@ td.n{font-variant-numeric:tabular-nums}
 .editor .opt .L{font-family:var(--mono);width:22px;color:var(--ink-2)}
 .inline{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
 /* 作答 */
-.take{display:grid;grid-template-columns:1fr 280px;gap:18px}
+.take{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:18px}
+.take>*{min-width:0}
+img{max-width:100%;height:auto}
+.sheet img.pic{display:block;max-width:100%;border:1px solid var(--rule);margin:8px 0 10px}
 .qbox{border:1px solid var(--rule);background:#fff;border-radius:6px;padding:18px 22px;min-height:50vh}
 .qbox .head{display:flex;justify-content:space-between;align-items:center;color:var(--ink-2);font-size:13px;margin-bottom:8px}
 .qbox .stem{font-size:16px;white-space:pre-wrap;margin-bottom:12px}
