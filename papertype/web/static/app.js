@@ -263,7 +263,7 @@ async function review(id, startAt = null) {
     ed.querySelectorAll('input,select,textarea').forEach(el => el.addEventListener('input', upd));
     ed.querySelectorAll('[data-ro]').forEach(b => b.onclick = () => { upd(); q.options.splice(+b.dataset.ro, 1); renderEditor(); });
     $('#addopt').onclick = () => { upd(); q.options.push(''); renderEditor(); };
-    if ($('#editcrop')) $('#editcrop').onclick = () => editCrop(kind, id, cur, $('#cropimg').src, () => { save(true).then(() => render()); });
+    if ($('#editcrop')) $('#editcrop').onclick = () => editCrop(kind, id, cur, $('#cropimg').src, (res) => { q.crop = res.crop; if (q.image) q.image = res.image; render(); });
     $('#prev').onclick = () => { if (cur > 0) { cur--; render(); } };
     $('#next').onclick = () => { if (cur < paper.questions.length - 1) { cur++; render(); } };
     $('#ok').onclick = () => { upd(); q.reviewed = true; q.issues = []; if (cur < paper.questions.length - 1) cur++; render(); };
@@ -315,8 +315,8 @@ function editCrop(kind, id, index, src, onDone) {
   $('#ccancel', m).onclick = closeModal;
   $('#csave', m).onclick = async () => {
     try {
-      await api(`/api/${kind}/${id}/questions/${index}/crop`, json('PUT', { x0: sel.x / scale, y0: sel.y / scale, x1: (sel.x + sel.w) / scale, y1: (sel.y + sel.h) / scale }));
-      closeModal(); toast('裁图已更新'); onDone();
+      const res = await api(`/api/${kind}/${id}/questions/${index}/crop`, json('PUT', { x0: sel.x / scale, y0: sel.y / scale, x1: (sel.x + sel.w) / scale, y1: (sel.y + sel.h) / scale }));
+      closeModal(); toast('裁图已更新'); onDone(res);
     } catch (e) { toast('保存失败：' + e.message, 4000); }
   };
 }
