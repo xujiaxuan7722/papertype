@@ -131,7 +131,7 @@ def _crops_pdf(paper: Paper, pdf_path: Path, adir: Path) -> None:
     doc.close()
     for q in paper.questions:
         if q.group and q.m_page and (q.m_page, q.m_y0) < (q.page, q.y0):
-            name = f"m_{_safe(q.unit)}_{q.no}.png"
+            name = f"m_{paper.questions.index(q) + 1:03d}_{_safe(q.unit)}_{q.no}.png"
             try:
                 pdf_import.render_span(pdf_path, q.m_page, q.m_y0, q.page, q.y0, adir / name)
                 q.material_crop = name
@@ -144,7 +144,7 @@ def _crops_pdf(paper: Paper, pdf_path: Path, adir: Path) -> None:
         y1 = min(y1, heights.get(page, 800) * 0.93)
         # 材料题：组内第一题的裁图从材料起点开始
         y0 = q.y0
-        name = f"q_{_safe(q.unit)}_{q.no}.png"
+        name = f"q_{i + 1:03d}_{_safe(q.unit)}_{q.no}.png"      # 带卷内序号：题号重复也不会互相覆盖
         try:
             pdf_import.render_clip(pdf_path, page, y0, y1, adir / name, next_page_y1=next_y1)
             q.crop = name
@@ -162,7 +162,7 @@ def _crops_images(paper: Paper, pages: list[Path], adir: Path) -> None:
             continue
         page, y1, next_y1 = _span_end(paper, i, q)
         y1 = min(y1, sizes[page][1])
-        name = f"q_{_safe(q.unit)}_{q.no}.png"
+        name = f"q_{i + 1:03d}_{_safe(q.unit)}_{q.no}.png"
         try:
             ocr_import.crop_image(pages[page - 1], q.y0, y1, adir / name)
             if next_y1 is not None and page < len(pages):
@@ -197,7 +197,7 @@ def _crops_docx(paper: Paper, adir: Path) -> None:
     for q in paper.questions:
         if q.image and pool:
             pics = [pool.pop(0)]
-            name = f"q_{_safe(q.unit)}_{q.no}.png"
+            name = f"q_{paper.questions.index(q) + 1:03d}_{_safe(q.unit)}_{q.no}.png"
             ims = [Image.open(p).convert("RGB") for p in pics]
             w = max(i.width for i in ims); h = sum(i.height for i in ims)
             canvas = Image.new("RGB", (w, h), "white")
