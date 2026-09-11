@@ -102,3 +102,11 @@ def test_icbc_material_groups(icbc):
     assert list(groups.values()) == [[51, 52, 53, 54, 55], [56, 57, 58, 59, 60]]
     by = {q.no: q for q in icbc.questions}
     assert by[56].m_page == 26 and not by[56].material      # 纯图片材料：无文字，但有裁图位置
+
+
+def test_boc_chart_material_text(boc):
+    q = next(q for q in boc.questions if q.unit == "行政能力测试" and q.no == 54)
+    assert q.material.startswith("根据资料，回答54—58 题。")
+    assert "2018 年全年研究与试验发展" in q.material and "专利申请数  432.3  16.9" in q.material
+    assert "24000  25" not in q.material and "\n0\n" not in q.material     # 图表坐标不进材料文字
+    assert q.m_page == 23

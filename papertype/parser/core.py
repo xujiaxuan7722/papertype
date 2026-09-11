@@ -38,6 +38,8 @@ SECTION_TYPES = [
     (re.compile(r"简答|论述|问答|案例分析|计算题|材料分析"), "essay"),
     (re.compile(r"选词填空|完形填空|阅读理解|逻辑推理|判断推理|数字运算|数量关系|资料分析|言语理解|图形推理|思维策略|常识|定义判断|类比推理"), "single"),
 ]
+SHORT_HEADING_RE = re.compile(r"[一-鿿A-Za-z]{2,8}")
+CHART_LINE_RE = re.compile(r"^[\d\s.,%．，、:：\-—–~～/()（）]+$")
 MATERIAL_SECTIONS = re.compile(r"完形填空|阅读理解|资料分析|阅读材料")
 MULTI_STEM_RE = re.compile(r"多项|多选|有哪些|包括哪些|正确的有|错误的有|不定项")
 
@@ -83,7 +85,7 @@ def _merge_paragraphs(lines: list[Line]) -> list[Para]:
         text = ln.text.strip()
         if not text:
             continue
-        short_heading = len(text) <= 8 and not re.search(r"[，。：；、,.\d=（）()]", text) and re.search(r"[一-鿿A-Za-z]", text)
+        short_heading = bool(SHORT_HEADING_RE.fullmatch(text))
         hard_new = bool(NUM_RE.match(text) or NUM_WORD_RE.match(text) or OPTION_HEAD_RE.match(text)
                         or UNIT_RE.match(text) or SECTION_RE.match(text) or ANSWER_RE.match(text)
                         or ln.is_heading or TEXT_MARK_RE.match(text) or ln.number)
@@ -151,7 +153,7 @@ def _classify(p: Para, ln: Line):
         p.kind = "option"; return
     if ln.is_heading and len(t) < 30:
         p.kind = "section"; return
-    if len(t) <= 8 and not re.search(r"[，。：；、,.\d=（）()]", t) and re.search(r"[一-鿿A-Za-z]", t):
+    if SHORT_HEADING_RE.fullmatch(t):
         # 短小无标点的独立行：视为小节标题（如"逻辑推理""资料分析"）
         p.kind = "section"; return
     p.kind = "other"
@@ -248,6 +250,7 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             pending_images = []
             return
         text = "\n".join(x.text for x in pending_other)
+        clean = _material_text(pending_other)
         if not seen_first_question and not unit and not section and group_id is None and not big_images:
             pending_other, pending_images = [], []      # 卷首说明 / 题量表，不是材料
             return
@@ -256,10 +259,10 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             first = min(firsts, key=lambda x: (x.page, x.y))
             pos = (first.page, first.y)
             if group_id and materials.get(group_id) == "" and group_id not in material_pos:
-                materials[group_id] = text.strip()   # "Text 1" 标记之后的正文
+                materials[group_id] = clean          # "Text 1" 标记之后的正文
                 material_pos[group_id] = pos
             else:
-                start_group(text, pos)
+                start_group(clean, pos)
         pending_other, pending_images = [], []
 
     for idx, p in enumerate(paras):
@@ -275,6 +278,9 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             section, section_type = "", "single"
             group_id, pending_other, pending_images, last_no, skipping_answer = None, [], [], 0, False
             continue
+        if p.kind == "section" and pending_other and cur is None and not p.lines[0].is_heading \
+                and MATERIAL_HINT_RE.search("\n".join(x.text for x in pending_other)):
+            p.kind = "other"          # 材料正在累积，中间冒出的短行（如图表单位"亿元 %"）不是标题
         if p.kind == "section":
             if not seen_first_question and not title and not unit and p.lines and p.lines[0].is_heading:
                 title = p.text
@@ -421,6 +427,21 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
     _finalize(questions, qmeta)
     validate(questions)
     return ParseResult(title=title, units=units, questions=questions)
+
+
+def _material_text(paras: list[Para]) -> str:
+    """材料文字：按物理行剔除图表坐标 / 纯数字行，保留正文与表格行。"""
+    out = []
+    for p in paras:
+        for l in (p.lines or []):
+            t = l.text.strip()
+            if not t or CHART_LINE_RE.match(t):
+                continue
+            cjk = len(re.findall(r"[一-鿿A-Za-z]", t))
+            if cjk < 2 and len(t) > 3:
+                continue
+            out.append(t)
+    return "\n".join(out).strip()
 
 
 def _looks_like_stem(text: str) -> bool:
