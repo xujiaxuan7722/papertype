@@ -25,7 +25,7 @@ DEFAULT_SETTINGS = {
     "llm_enabled": False,
     "llm_base_url": "https://token.sensenova.cn/v1",
     "llm_api_key": "",
-    "llm_model": "deepseek-v4-flash",
+    "llm_model": "deepseek-v4-pro",
     "app_window": False,
 }
 
