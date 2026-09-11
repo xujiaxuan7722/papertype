@@ -39,7 +39,9 @@ def test_boc_no_watermark(boc):
 def test_boc_review_rate(boc):
     bad = [q for q in boc.questions if not q.reviewed]
     assert len(bad) <= len(boc.questions) * 0.1
-    assert len(bad) == 0
+    assert [(q.unit, q.no) for q in bad] == [("行政能力测试", 45)]     # 公式对象题：私有编码字符，改为看图作答并提示核对
+    q45 = bad[0]
+    assert q45.image and q45.options == ["1111", "111", "2222", "222"]
 
 
 def test_boc_options_and_types(boc):

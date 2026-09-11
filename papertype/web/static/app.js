@@ -151,13 +151,17 @@ async function importPage() {
 
 async function runLLM(kind, id, scope) {
   const r = await api(`/api/${kind}/${id}/llm`, json('POST', { scope }));
-  const m = modal(`<p>大模型处理中… <span id="jp">0/1</span></p>`);
-  while (true) {
+  const m = modal(`<p>大模型处理中… 已完成 <span id="jp">0/1</span> 块<br><span class="muted">每块最多 20 题，多块并行；一块通常 20 到 60 秒。</span></p><div class="row" style="justify-content:flex-end"><button class="btn" id="jc">取消</button></div>`);
+  let cancelled = false;
+  $('#jc', m).onclick = async () => { cancelled = true; await api(`/api/jobs/${r.job}`, { method: 'DELETE' }); closeModal(); toast('已取消，试卷未改动'); };
+  while (!cancelled) {
     await new Promise(r => setTimeout(r, 1500));
     const j = await api(`/api/jobs/${r.job}`);
+    if (cancelled) break;
     $('#jp', m).textContent = j.progress;
     if (j.done) { closeModal(); if (j.error) throw new Error(j.error); toast(j.result.message, 4000); return j.result; }
   }
+  throw new Error('已取消');
 }
 
 /* ---------------- 校正页 ---------------- */

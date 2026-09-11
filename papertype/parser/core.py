@@ -38,6 +38,8 @@ SECTION_TYPES = [
     (re.compile(r"简答|论述|问答|案例分析|计算题|材料分析"), "essay"),
     (re.compile(r"选词填空|完形填空|阅读理解|逻辑推理|判断推理|数字运算|数量关系|资料分析|言语理解|图形推理|思维策略|常识|定义判断|类比推理"), "single"),
 ]
+PUA_RE = re.compile(r"[\uE000-\uF8FF\uFFFD]")
+FORMULA_LINE_RE = re.compile(r"^[\d\s+\-×÷*/=().,（）％%^²³√…]{8,}$")
 SHORT_HEADING_RE = re.compile(r"[一-鿿A-Za-z]{2,8}")
 CHART_LINE_RE = re.compile(r"^[\d\s.,%．，、:：\-—–~～/()（）]+$")
 MATERIAL_SECTIONS = re.compile(r"完形填空|阅读理解|资料分析|阅读材料")
@@ -494,10 +496,17 @@ def _finalize(questions: list[Question], qmeta: dict[int, dict]):
             else:
                 q.type = "blank"
                 q.blanks = max(q.blanks, 1)
+        # 公式对象：私有编码字符（Word 公式的运算符）或整行数字运算式 → 看图作答
+        if q.stem and (PUA_RE.search(q.stem) or any(FORMULA_LINE_RE.match(l.strip()) for l in q.stem.splitlines()[1:])):
+            q.image = q.image or "pending"
+            if PUA_RE.search(q.stem):
+                q.stem = PUA_RE.sub("□", q.stem)
+                q.issues.append("题干含无法还原的公式符号，已改为看图作答，请核对")
         # 图片题：有图像对象且（题干很短或选项内容为空）
         if q.image == "pending":
             empty_opts = q.options and all(len(o.strip()) == 0 for o in q.options)
-            q.image = "yes" if (empty_opts or len(q.stem) < 40) else None
+            formula = PUA_RE.search(q.stem) or any(FORMULA_LINE_RE.match(l.strip()) for l in q.stem.splitlines())
+            q.image = "yes" if (empty_opts or len(q.stem) < 40 or formula) else None
         if q.options and all(len(o.strip()) == 0 for o in q.options) and not q.image:
             q.image = "yes"
         if q.options and not q.stem.strip():

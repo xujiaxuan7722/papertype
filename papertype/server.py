@@ -270,7 +270,7 @@ def llm_job(kind: str, pid: str, body: LLMJobIn):
     if body.scope == "flagged" and not flagged:
         raise HTTPException(400, "没有待核对的题。")
     job_id = uuid.uuid4().hex[:8]
-    JOBS[job_id] = {"done": False, "progress": "0/1", "error": None, "result": None}
+    JOBS[job_id] = {"done": False, "progress": "0/1", "error": None, "result": None, "cancelled": False}
 
     def run():
         try:
@@ -281,6 +281,9 @@ def llm_job(kind: str, pid: str, body: LLMJobIn):
                 text = p.raw_text or llm_tasks.questions_to_text(p)
                 mode = "ocr_tidy" if body.scope == "ocr_tidy" else "rechunk"
             out = llm_tasks.rewrite(text, mode, progress=lambda i, n: JOBS[job_id].update(progress=f"{i}/{n}"))
+            if JOBS[job_id]["cancelled"]:
+                JOBS[job_id].update(done=True, error="已取消，试卷未改动")
+                return
             newqs = llm_tasks.parse_model_output(out, p.import_path)
             if body.scope == "flagged":
                 by = {(q.unit, q.no): q for q in newqs}
@@ -312,6 +315,15 @@ def llm_job(kind: str, pid: str, body: LLMJobIn):
 
     threading.Thread(target=run, daemon=True).start()
     return {"job": job_id}
+
+
+@app.delete("/api/jobs/{job_id}")
+def cancel_job(job_id: str):
+    j = JOBS.get(job_id)
+    if not j:
+        raise HTTPException(404)
+    j["cancelled"] = True
+    return {"ok": True}
 
 
 @app.get("/api/jobs/{job_id}")
