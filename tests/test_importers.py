@@ -177,13 +177,36 @@ def test_docx_soft_breaks_split_into_lines(tmp_path):
     assert r.questions[1].options == ["解放思想，实事求是", "独立自主", "自力更生", "改革开放"]
 
 
-def test_fake_docx_old_doc_gives_clear_error(tmp_path, monkeypatch):
-    """老版 .doc 改后缀成 .docx：没有 LibreOffice 时给出「另存为 .docx」的明确提示，而不是 500。"""
+def test_doc_binary_text_numbering_softbreaks_table():
+    """Word 97-2003 二进制 .doc：纯 Python 读正文、还原自动编号、软回车分行、表格按行、内置标题样式。"""
+    from papertype.importers import doc_import
+    assert doc_import.is_doc(FIX / "sample.doc")
+    lines = doc_import.extract_lines(FIX / "sample.doc")
+    assert [l.text for l in lines] == [
+        "某银行校园招聘笔试模拟卷", "一、单选题",
+        "1. 下列关于 TCP 的说法正确的是（ ）。", "A. 面向无连接   B. 提供可靠传输", "C. 不保证顺序   D. 无流量控制",
+        "2. 属于关系型数据库的是（ ）。", "A. MySQL  B. Redis", "C. MongoDB  D. Neo4j",
+        "二、判断题", "3. HTTP 是无状态协议。（ ）", "备注  本表仅用于测试",
+    ]
+    assert [l.number for l in lines if l.number] == [1, 2, 3]       # 自动编号跨分区连续
+    assert lines[0].is_heading and not lines[1].is_heading
+    r = parse_lines(lines, source="docx")
+    assert [q.no for q in r.questions] == [1, 2, 3]
+    assert r.questions[0].options == ["面向无连接", "提供可靠传输", "不保证顺序", "无流量控制"]
+    assert r.questions[2].type == "judge"
+
+
+def test_doc_renamed_as_docx_imports_without_converter(tmp_path, monkeypatch):
+    """老 .doc 改后缀成 .docx 也能直接导入（不依赖 LibreOffice/Word）；非 Word 文件给明确提示。"""
+    import shutil
     from papertype import pipeline
     monkeypatch.setenv("PAPERTYPE_DATA", str(tmp_path / "data"))
-    monkeypatch.setattr(pipeline, "_soffice", lambda: None)
-    f = tmp_path / "old.docx"
-    f.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 600)
+    f = tmp_path / "renamed.docx"
+    shutil.copy(FIX / "sample.doc", f)
+    paper = pipeline.import_file(f)
+    assert paper.import_path == "doc" and [q.no for q in paper.questions] == [1, 2, 3]
+    junk = tmp_path / "junk.docx"
+    junk.write_bytes(b"not a word file" * 40)
     with pytest.raises(pipeline.ImportError_) as e:
-        pipeline.import_file(f)
-    assert "97-2003" in str(e.value) and "另存为" in str(e.value)
+        pipeline.import_file(junk)
+    assert "另存为" in str(e.value)

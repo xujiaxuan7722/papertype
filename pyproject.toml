@@ -6,7 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
   "fastapi", "uvicorn[standard]", "python-multipart",
   "pymupdf", "python-docx", "rapidocr", "onnxruntime", "pillow",
-  "openpyxl", "httpx",
+  "openpyxl", "httpx", "olefile",
 ]
 
 [project.optional-dependencies]

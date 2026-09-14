@@ -100,7 +100,7 @@ async function importPage() {
       <div>
         ${mode === 'text' ? `<textarea id="txt" style="min-height:320px" placeholder="把试卷文本贴进来。豆包转出的文本也走这里。&#10;题号必须有；选项每个一行或同行都可以。"></textarea>`
         : `<div class="drop" id="drop"><p>${mode === 'file' ? '拖入一份 .docx 或 .pdf' : '拖入一张或多张图片（jpg / png），或扫描版 pdf；多张按文件名顺序'}</p>
-            <input type="file" id="files" ${mode === 'ocr' ? 'multiple accept=".jpg,.jpeg,.png,.pdf"' : 'accept=".docx,.pdf"'}>
+            <input type="file" id="files" ${mode === 'ocr' ? 'multiple accept=".jpg,.jpeg,.png,.pdf"' : 'accept=".doc,.docx,.pdf"'}>
             <p class="muted" id="flist"></p></div>`}
         <div class="f" style="margin-top:12px"><label class="muted">试卷名（可留空，自动取卷首标题）</label><input type="text" id="title"></div>
       </div>
