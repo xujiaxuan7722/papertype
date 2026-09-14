@@ -409,3 +409,17 @@ A. 甲   B. 乙   C. 丙   D. 丁
     assert q56.type == "single" and q56.options == ["", "", "", ""] and not q56.reviewed
     assert q57.type == "single" and q57.options == ["", "", "", ""]
     assert q58.options == ["甲", "乙", "丙", "丁"] and q58.reviewed
+
+
+def test_big_number_jump_accepted_when_sequence_continues():
+    """原卷缺了 76～80 题：75 之后直接 81，只要后面 82 接得上，81 起仍是题，不当材料里的数字。"""
+    text = """75.甲（ ）。
+A. 一 B. 二 C. 三 D. 四
+四、逻辑判断。每题给出一段陈述，这段陈述被假设是正确的，不容置疑的。
+81.乙（ ）。
+A. 一 B. 二 C. 三 D. 四
+82.丙（ ）。
+A. 一 B. 二 C. 三 D. 四
+"""
+    r = parse_lines(text_import.extract_lines(text), source="docx")
+    assert [q.no for q in r.questions] == [75, 81, 82]

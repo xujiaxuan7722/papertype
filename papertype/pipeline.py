@@ -31,6 +31,7 @@ def import_file(path: str | Path, title: str | None = None) -> Paper:
             result = parse_lines(lines, source="docx")
             paper = _build(pid, title or result.title or path.stem, path.name, "docx", result, lines)
             _crops_docx(paper, adir, lines)
+            _picture_option_questions(paper, has_pictures=True)
         elif doc_import.is_doc(path):
             # Word 97-2003 二进制 .doc（哪怕后缀写成 .docx）：纯 Python 读正文和自动编号，没有图片
             try:
@@ -56,16 +57,24 @@ def import_file(path: str | Path, title: str | None = None) -> Paper:
 
 
 
+def _picture_option_questions(paper: Paper, has_pictures: bool) -> None:
+    """选项全是图的题（图形推理）：题干末尾只剩"（ ）"、没有选项 → 单选 + A～D 空选项按字母作答。"""
+    for q in paper.questions:
+        if not q.options and (q.type in ("single", "multi") or
+                              (q.type == "blank" and q.blanks <= 1 and re.search(r"[（(]\s*[)）]\s*[：:。]?$", q.stem))):
+            q.type = "single"
+            q.options = ["", "", "", ""]
+            if not (has_pictures and q.image):
+                q.reviewed = False
+                q.issues.append("本题的图在 Word 里是图片，老格式 .doc 拿不到；可对照原卷按字母作答，或另存为 .docx 重新导入"
+                                if not has_pictures else "本题没有选项文字，按字母作答；请核对原卷")
+
+
 def _doc_postprocess(paper: Paper) -> None:
     """老格式 .doc 拿不到图片：清掉看图标记；选项全是图的题给 A～D 空选项按字母作答。"""
     for q in paper.questions:
         q.image = None          # .doc 没有页面图，规则按「2/3」「°F」等字样猜的看图作答不成立
-        if not q.options and (q.type in ("single", "multi") or
-                              (q.type == "blank" and q.blanks <= 1 and re.search(r"[（(]\s*[)）]\s*[：:。]?$", q.stem))):
-            q.type = "single"
-            q.options = ["", "", "", ""]        # 选项是图（图形推理等）：按字母作答
-            q.reviewed = False
-            q.issues.append("本题的图在 Word 里是图片，老格式 .doc 拿不到；可对照原卷按字母作答，或另存为 .docx 重新导入")
+    _picture_option_questions(paper, has_pictures=False)
 
 
 def import_ocr(paths: list[str | Path], title: str | None = None) -> Paper:

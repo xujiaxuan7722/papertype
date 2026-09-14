@@ -388,8 +388,9 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             cur.stem = (cur.stem + "\n" + p.text.strip()).strip()
             sub_seq = p.number
             continue
-        if p.kind == "number" and last_no and p.number not in (1, last_no + 1, last_no + 2, last_no + 3):
-            p.kind = "other"        # 材料 / 图表里的数字，不是题号
+        if p.kind == "number" and last_no and p.number not in (1, last_no + 1, last_no + 2, last_no + 3) \
+                and not (p.number > last_no and _sequence_ahead(paras, idx)):
+            p.kind = "other"        # 材料 / 图表里的数字，不是题号（原卷缺了一段题、题号大跳但后面顺序接得上的除外）
         if p.kind == "number" and p.number == 1 and last_no >= 3:
             close_current(p.page, p.y)
             if not unit:
@@ -529,6 +530,17 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
     _finalize(questions, qmeta)
     validate(questions)
     return ParseResult(title=title, units=units, questions=questions)
+
+
+def _sequence_ahead(paras: list[Para], idx: int) -> bool:
+    """paras[idx] 是题号大跳的段：后面不远处若出现 题号+1，说明它确实是题（原卷缺了中间几题）。"""
+    want = paras[idx].number + 1
+    for q in paras[idx + 1: idx + 14]:
+        if q.kind == "number" and q.number == want:
+            return True
+        if q.kind in ("unit", "answer", "mark"):
+            return False
+    return False
 
 
 def _subitems_ahead(paras: list[Para], idx: int) -> bool:
