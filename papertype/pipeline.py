@@ -23,7 +23,8 @@ def import_file(path: str | Path, title: str | None = None) -> Paper:
     ext = path.suffix.lower()
     pid = new_id(_slug(path.stem))
     adir = assets_dir(pid)
-    if ext == ".docx":
+    if ext in (".docx", ".doc"):
+        path = _ensure_real_docx(path, adir)
         lines = docx_import.extract_lines(path, assets_dir=adir)
         result = parse_lines(lines, source="docx")
         paper = _build(pid, title or result.title or path.stem, path.name, "docx", result, lines)
@@ -39,6 +40,46 @@ def import_file(path: str | Path, title: str | None = None) -> Paper:
     else:
         raise ImportError_(f"不支持的文件类型：{ext}。「导入文件」只收 .docx 和 .pdf，图片请走「OCR 识图」。")
     return paper
+
+
+def _soffice() -> str | None:
+    """本机的 LibreOffice 命令（Linux 的 soffice / Windows 默认安装路径），没有则 None。"""
+    for name in ("soffice", "libreoffice"):
+        if shutil.which(name):
+            return shutil.which(name)
+    for c in (r"C:\Program Files\LibreOffice\program\soffice.exe",
+              r"C:\Program Files (x86)\LibreOffice\program\soffice.exe"):
+        if Path(c).exists():
+            return c
+    return None
+
+
+def _ensure_real_docx(path: Path, adir: Path) -> Path:
+    """.docx 必须是 zip 包。老版 Word 97-2003 的 .doc（哪怕后缀写成 .docx）先用 LibreOffice 转，转不了就明确报错。"""
+    import subprocess
+    import zipfile
+    if zipfile.is_zipfile(path):
+        return path
+    head = path.read_bytes()[:8]
+    is_ole = head.startswith(b"\xd0\xcf\x11\xe0")
+    hint = ("这份文件是 Word 97-2003 的老格式（.doc），只是后缀写成了 .docx。" if is_ole
+            else "这份文件不是有效的 Word 文档（不是 .docx 包）。")
+    exe = _soffice()
+    if is_ole and exe:
+        outdir = adir / "converted"
+        outdir.mkdir(parents=True, exist_ok=True)
+        src = outdir / (path.stem + ".doc")
+        shutil.copy(path, src)
+        try:
+            subprocess.run([exe, "--headless", "--convert-to", "docx", "--outdir", str(outdir), str(src)],
+                           capture_output=True, timeout=180)
+        except Exception:
+            pass
+        out = outdir / (path.stem + ".docx")
+        if out.exists() and zipfile.is_zipfile(out):
+            return out
+        hint += " 已尝试用 LibreOffice 自动转换但失败。"
+    raise ImportError_(hint + " 请在 WPS 或 Word 里打开后「另存为」.docx 格式再导入。")
 
 
 def import_ocr(paths: list[str | Path], title: str | None = None) -> Paper:

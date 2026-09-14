@@ -155,3 +155,35 @@ def test_docx_images_assigned_by_position(tmp_path, monkeypatch):
     assert q2.image is None and q2.crop is None
     assert q3.image and Image.open(adir / q3.image).size == (80, 90)   # 两张纵向拼接
     assert q1.image != q3.image
+
+
+def test_docx_soft_breaks_split_into_lines(tmp_path):
+    """WPS/老 .doc 常把整题放在一个段落里用软回车分行：要按行拆开，题干和选项才能分开。"""
+    doc = Document()
+    doc.add_paragraph("一、单选题")
+    p = doc.add_paragraph()
+    p.add_run("1.上层建筑的核心是：").add_break()
+    p.add_run("A.思想意识形态   B.军队   C.监狱   D.国家政权").add_break()
+    p.add_run("2.邓小平理论的精髓是：").add_break()
+    p.add_run("A.解放思想，实事求是      B.独立自主").add_break()
+    p.add_run("C.自力更生    D.改革开放")
+    f = tmp_path / "soft.docx"
+    doc.save(str(f))
+    lines = docx_import.extract_lines(f)
+    assert [l.text[:6] for l in lines] == ["一、单选题", "1.上层建筑", "A.思想意识", "2.邓小平理", "A.解放思想", "C.自力更生"]
+    r = parse_lines(lines, source="docx")
+    assert [q.no for q in r.questions] == [1, 2]
+    assert r.questions[0].options == ["思想意识形态", "军队", "监狱", "国家政权"]
+    assert r.questions[1].options == ["解放思想，实事求是", "独立自主", "自力更生", "改革开放"]
+
+
+def test_fake_docx_old_doc_gives_clear_error(tmp_path, monkeypatch):
+    """老版 .doc 改后缀成 .docx：没有 LibreOffice 时给出「另存为 .docx」的明确提示，而不是 500。"""
+    from papertype import pipeline
+    monkeypatch.setenv("PAPERTYPE_DATA", str(tmp_path / "data"))
+    monkeypatch.setattr(pipeline, "_soffice", lambda: None)
+    f = tmp_path / "old.docx"
+    f.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 600)
+    with pytest.raises(pipeline.ImportError_) as e:
+        pipeline.import_file(f)
+    assert "97-2003" in str(e.value) and "另存为" in str(e.value)

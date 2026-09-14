@@ -118,9 +118,14 @@ def extract_lines(docx_path: str | Path, assets_dir: str | Path | None = None) -
                 continue
             style = (p.style.name or "") if p.style is not None else ""
             heading = style.lower().startswith("heading") or style.startswith("标题") or style == "Title"
-            out.append(Line(text=text, page=1, y=y, x=10.0, height=1.0, source="docx",
-                            number=number, blanks=blanks, is_heading=heading))
-            y += 1
+            # 段内软回车（Shift+Enter，<w:br/>）：WPS/老 .doc 常把整题甚至多题放在一个段落里，按行拆开
+            pieces = [t.strip() for t in text.split("\n") if t.strip()]
+            for k, t in enumerate(pieces):
+                out.append(Line(text=t, page=1, y=y, x=10.0, height=1.0, source="docx",
+                                number=number if k == 0 else None,
+                                blanks=blanks if len(pieces) == 1 else len(BLANK_RUN_RE.findall(t)),
+                                is_heading=heading and k == 0))
+                y += 1
         elif tag == "tbl":
             from docx.table import Table
             t = Table(child, doc)

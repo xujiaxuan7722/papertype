@@ -64,6 +64,10 @@ async def do_import(mode: str = Form(...), title: str = Form(""), text: str = Fo
             raise pipeline.ImportError_("未知的导入方式")
     except pipeline.ImportError_ as e:
         raise HTTPException(400, str(e))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(400, f"导入时出错：{type(e).__name__}: {e}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     store.save_paper(paper, "drafts")
