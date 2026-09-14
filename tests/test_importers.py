@@ -332,3 +332,20 @@ def test_word_merged_cells_marked(name):
     r = parse_lines(lines, source="docx")
     assert [q.no for q in r.questions] == [1, 2]
     assert "|年度|产量|>|" in (r.questions[0].material or "") and "|^|计划|实际|" in r.questions[0].material
+
+
+def test_number_missing_punctuation_is_rescued():
+    """题号后漏了标点（"43市场调节是指"）：按期望题号救回，不再把下一题的选项粘进上一题。"""
+    text = """42.企业要提高经济效益，必须使（ ）。
+A.利益总额增加   B.消耗减少
+C.利润增长快   D.利润率高
+43市场调节是指：（ ）。
+A.有计划地调节   B.由价值规律自发调节
+C.资源配置方式   D.辅之以宏观调控
+44.我国的社会主义市场经济体制的显著特点表现在（ ）。
+A.甲   B.乙   C.丙   D.丁
+"""
+    r = parse_lines(text_import.extract_lines(text), source="docx")
+    assert [q.no for q in r.questions] == [42, 43, 44]
+    assert [len(q.options) for q in r.questions] == [4, 4, 4]
+    assert r.questions[1].stem.startswith("市场调节是指")

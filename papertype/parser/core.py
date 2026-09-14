@@ -119,8 +119,8 @@ def _merge_paragraphs(lines: list[Line]) -> list[Para]:
         if prev and not prev.image and not starts_new and ln.source == "text":
             if prev.kind in ("number", "other") and not _ends_sentence(prev.text):
                 _append(prev, ln); continue
-            if prev.kind == "option" and len(text) < 25:
-                _append(prev, ln); continue
+            if prev.kind == "option" and len(text) < 25 and not re.match(r"^\d{1,3}[一-鿿（(]", text):
+                _append(prev, ln); continue          # 短行并入选项；"43市场调节是指" 这种漏标点的题号行除外
         p = Para(text=text, page=ln.page, y=ln.y, x=ln.x, height=ln.height, blanks=ln.blanks, lines=[ln])
         _classify(p, ln)
         paras.append(p)
@@ -180,6 +180,11 @@ def _rescue_number(p: Para, expected: int) -> bool:
         return False
     if TABLE_ROW_RE.match(p.text.split("\n")[0].strip()):
         return False                       # 表格数据行里的 "1.19" 不是题号
+    m = re.match(r"^\s*(\d{1,3})(?=[一-鿿（(“\"])", p.text)
+    if m and int(m.group(1)) == expected:
+        p.kind = "number"; p.number = expected      # 题号后漏了标点："43市场调节是指"
+        p.text = p.text[m.end():].strip()
+        return True
     head = p.text[:16]
     for m in NUM_LOOSE_RE.finditer(head):
         if int(m.group(1)) == expected:
