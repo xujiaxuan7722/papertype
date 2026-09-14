@@ -38,6 +38,8 @@ def import_file(path: str | Path, title: str | None = None) -> Paper:
                 raise ImportError_(f"这份老格式 .doc 读取失败（{e}），请在 WPS 或 Word 里「另存为」.docx 再导入。")
             result = parse_lines(lines, source="docx")
             paper = _build(pid, title or result.title or path.stem, path.name, "doc", result, lines)
+            for q in paper.questions:
+                q.image = None          # .doc 没有页面图，规则按「2/3」「°F」等字样猜的看图作答不成立
         else:
             raise ImportError_("这份文件不是有效的 Word 文档（既不是 .docx 包也不是老版 .doc），请在 WPS 或 Word 里「另存为」.docx 再导入。")
     elif ext == ".pdf":
