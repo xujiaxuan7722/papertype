@@ -1,6 +1,7 @@
 """导入管线：文件 / 图片 / 文本 → Line → 切题 → 裁图 → 草稿试卷（docs/最终方案 §7）。"""
 from __future__ import annotations
 
+import re
 import shutil
 import time
 from pathlib import Path
@@ -38,12 +39,7 @@ def import_file(path: str | Path, title: str | None = None) -> Paper:
                 raise ImportError_(f"这份老格式 .doc 读取失败（{e}），请在 WPS 或 Word 里「另存为」.docx 再导入。")
             result = parse_lines(lines, source="docx")
             paper = _build(pid, title or result.title or path.stem, path.name, "doc", result, lines)
-            for q in paper.questions:
-                q.image = None          # .doc 没有页面图，规则按「2/3」「°F」等字样猜的看图作答不成立
-                if q.type in ("single", "multi") and not q.options:
-                    q.options = ["", "", "", ""]        # 选项是图（图形推理等）：按字母作答
-                    q.reviewed = False
-                    q.issues.append("本题的图在 Word 里是图片，老格式 .doc 拿不到；可对照原卷按字母作答，或另存为 .docx 重新导入")
+            _doc_postprocess(paper)
         else:
             raise ImportError_("这份文件不是有效的 Word 文档（既不是 .docx 包也不是老版 .doc），请在 WPS 或 Word 里「另存为」.docx 再导入。")
     elif ext == ".pdf":
@@ -57,6 +53,19 @@ def import_file(path: str | Path, title: str | None = None) -> Paper:
     else:
         raise ImportError_(f"不支持的文件类型：{ext}。「导入文件」只收 .docx 和 .pdf，图片请走「OCR 识图」。")
     return paper
+
+
+
+def _doc_postprocess(paper: Paper) -> None:
+    """老格式 .doc 拿不到图片：清掉看图标记；选项全是图的题给 A～D 空选项按字母作答。"""
+    for q in paper.questions:
+        q.image = None          # .doc 没有页面图，规则按「2/3」「°F」等字样猜的看图作答不成立
+        if not q.options and (q.type in ("single", "multi") or
+                              (q.type == "blank" and q.blanks <= 1 and re.search(r"[（(]\s*[)）]\s*[：:。]?$", q.stem))):
+            q.type = "single"
+            q.options = ["", "", "", ""]        # 选项是图（图形推理等）：按字母作答
+            q.reviewed = False
+            q.issues.append("本题的图在 Word 里是图片，老格式 .doc 拿不到；可对照原卷按字母作答，或另存为 .docx 重新导入")
 
 
 def import_ocr(paths: list[str | Path], title: str | None = None) -> Paper:

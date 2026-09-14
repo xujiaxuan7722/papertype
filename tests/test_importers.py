@@ -389,3 +389,23 @@ A. 一 B. 二 C. 三 D. 四
     r = parse_lines(text_import.extract_lines(text), source="docx")
     assert [q.no for q in r.questions] == [139, 140]
     assert r.questions[1].options == ["一", "二", "三", "四"]
+
+
+def test_doc_picture_option_questions_get_letter_options(tmp_path, monkeypatch):
+    """.doc 里选项全是图的题（图形推理）：题干末尾只剩"（ ）"、没有选项 → 单选 + A～D 空选项按字母作答，并标待核对。"""
+    import shutil
+    from papertype import pipeline
+    monkeypatch.setenv("PAPERTYPE_DATA", str(tmp_path / "data"))
+    # 用文本入口构造同样形态的题，再走 doc 分支的后处理逻辑
+    text = """56．从所给的四个选项中，选择最合适的一个填入问号处，使之呈现一定的规律性：（  ）
+57．左边给定的是纸盒的外表面，下面哪一项能由它折叠而成？（  ）
+58．下列说法正确的是（  ）
+A. 甲   B. 乙   C. 丙   D. 丁
+"""
+    r = parse_lines(text_import.extract_lines(text), source="docx")
+    paper = pipeline._build("t", "t", "t.doc", "doc", r, None)
+    pipeline._doc_postprocess(paper)
+    q56, q57, q58 = paper.questions
+    assert q56.type == "single" and q56.options == ["", "", "", ""] and not q56.reviewed
+    assert q57.type == "single" and q57.options == ["", "", "", ""]
+    assert q58.options == ["甲", "乙", "丙", "丁"] and q58.reviewed
