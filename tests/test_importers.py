@@ -157,6 +157,34 @@ def test_docx_images_assigned_by_position(tmp_path, monkeypatch):
     assert q1.image != q3.image
 
 
+def test_docx_chart_picture_becomes_group_material_image(tmp_path, monkeypatch):
+    """资料分析：材料提示语之后的图表图片 → 组内第一题的 material_crop（只生成一份），题内小图 → 题图。"""
+    from PIL import Image
+    from papertype import pipeline
+    monkeypatch.setenv("PAPERTYPE_DATA", str(tmp_path / "data"))
+    chart = tmp_path / "chart.png"; Image.new("RGB", (300, 120), "gray").save(chart)
+    small = tmp_path / "small.png"; Image.new("RGB", (100, 40), "black").save(small)
+    doc = Document()
+    doc.add_paragraph("(三)")
+    doc.add_paragraph("根据下图回答1～2题。")
+    doc.add_picture(str(chart))
+    doc.add_paragraph("1.图中数值最大的一项是：")
+    doc.add_paragraph("A. 第一项   B. 第二项   C. 第三项   D. 第四项")
+    doc.add_paragraph("2.同比增速最高的是：")
+    doc.add_paragraph("A. 甲   B. 乙   C. 丙   D. 丁")
+    doc.add_paragraph("3.如图，问号处应填入的图形是：")
+    doc.add_picture(str(small))
+    doc.add_paragraph("A   B   C   D")
+    f = tmp_path / "chart.docx"; doc.save(str(f))
+    paper = pipeline.import_file(f)
+    q1, q2, q3 = paper.questions
+    adir = tmp_path / "data" / "assets" / paper.id
+    assert q1.group and q2.group == q1.group
+    assert q1.material_crop and Image.open(adir / q1.material_crop).size == (300, 120)
+    assert q2.material_crop is None and q1.image is None and q2.image is None
+    assert q3.group is None and q3.image and Image.open(adir / q3.image).size == (100, 40)
+
+
 def test_docx_soft_breaks_split_into_lines(tmp_path):
     """WPS/老 .doc 常把整题放在一个段落里用软回车分行：要按行拆开，题干和选项才能分开。"""
     doc = Document()

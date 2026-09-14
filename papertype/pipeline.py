@@ -218,7 +218,7 @@ def _crops_docx(paper: Paper, adir: Path, lines) -> None:
 
     for i, q in enumerate(paper.questions):
         _, end_y, _ = _span_end(paper, i, q)
-        if q.group and q.m_y0 < q.y0:
+        if q.group and q.m_page and q.m_y0 < q.y0:          # 材料位置只记在组内第一题上，与 PDF 路径一致
             mats = [p for y, p in imgs if q.m_y0 <= y < q.y0]
             if mats:
                 q.material_crop = stack(mats, f"m_{i + 1:03d}_{_safe(q.unit)}_{q.no}.png")
