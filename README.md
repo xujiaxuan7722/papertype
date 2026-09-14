@@ -14,7 +14,9 @@ python -m venv .venv
 python run_papertype.py             # 自动打开系统默认浏览器
 ```
 
-Windows 上也可以直接双击 `run_papertype.bat`。
+Windows 上直接双击 `run_papertype.bat`：首次会自动建虚拟环境并从清华镜像装依赖（需联网，几分钟），之后每次秒开。
+
+**搬到另一台 Windows 电脑：** 装好 Python 3.11+（安装时勾选 Add to PATH），把整个仓库文件夹拷过去（或 `git clone`），双击 `run_papertype.bat`。已导入的试卷和作答记录都在 `data/` 目录，一起拷走即可延续。
 
 **打成 exe（在 Windows 上执行一次）：** 双击 `build_windows.bat`，产物在 `dist\PaperType\`，把整个文件夹拷到笔记本，双击 `PaperType.exe`。数据（试卷、作答记录、裁图、设置）都在 exe 旁边的 `data\` 目录里。
 
