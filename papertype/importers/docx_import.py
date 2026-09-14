@@ -128,17 +128,16 @@ def extract_lines(docx_path: str | Path, assets_dir: str | Path | None = None) -
                 y += 1
         elif tag == "tbl":
             from docx.table import Table
+            from docx.text.paragraph import Paragraph
             t = Table(child, doc)
-            for row in t.rows:
+            for tr in t._tbl.tr_lst:
                 cells = []
-                seen = set()
-                for c in row.cells:
-                    if id(c._tc) in seen:
-                        continue                       # 横向合并的单元格只算一次
-                    seen.add(id(c._tc))
-                    cells.append("\n".join(pp.text.strip() for pp in c.paragraphs if pp.text.strip()))
-                if any(cells):
-                    text = "  ".join(c.replace("\n", " ") for c in cells if c)
+                for tc in tr.tc_lst:
+                    txt = "\n".join(Paragraph(pe, None).text.strip() for pe in tc.p_lst if Paragraph(pe, None).text.strip())
+                    cells.append("^" if tc.vMerge == "continue" else txt)      # 纵向合并的续格
+                    cells.extend([">"] * (max(tc.grid_span or 1, 1) - 1))       # 横向合并占的格
+                if any(c not in ("", ">", "^") for c in cells):
+                    text = "  ".join(c.replace("\n", " ") for c in cells if c not in ("", ">", "^"))
                     out.append(Line(text=text, page=1, y=y, x=10.0, height=1.0, source="docx", cells=cells))
                     y += 1
     return out

@@ -291,3 +291,16 @@ def test_docx_table_kept_as_rows_in_material(tmp_path):
     assert [q.no for q in r.questions] == [1, 2]
     m = r.questions[0].material or ""
     assert "||2020|2021|" in m and "|产量（吨）|120|150|" in m
+
+
+@pytest.mark.parametrize("name", ["merged.docx", "merged.doc"])
+def test_word_merged_cells_marked(name):
+    """合并单元格：横向续格记 ">"，纵向续格记 "^"，docx 与 .doc 两种格式结果一致；材料里保留这些标记供作答页跨列/跨行渲染。"""
+    from papertype.importers import doc_import
+    f = FIX / name
+    lines = doc_import.extract_lines(f) if name.endswith(".doc") else docx_import.extract_lines(f)
+    rows = [l.cells for l in lines if l.cells is not None]
+    assert rows == [["年度", "产量", ">"], ["^", "计划", "实际"], ["2020", "120", "150"]]
+    r = parse_lines(lines, source="docx")
+    assert [q.no for q in r.questions] == [1, 2]
+    assert "|年度|产量|>|" in (r.questions[0].material or "") and "|^|计划|实际|" in r.questions[0].material

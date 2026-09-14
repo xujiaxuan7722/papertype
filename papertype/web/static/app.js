@@ -352,7 +352,26 @@ async function take(id, mode) {
   // 材料文字里 "|a|b|c|" 形式的连续行（Word 表格）渲染成表格，其余按原文换行
   const matHtml = text => {
     const lines = String(text || '').split('\n'); let h = ''; let rows = [];
-    const flush = () => { if (rows.length) { h += `<table class="mt">${rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table>`; rows = []; } };
+    const flush = () => {
+      if (!rows.length) return;
+      // ">" = 与左格合并（跨列），"^" = 与上格合并（跨行）
+      const grid = [];                       // grid[r][col] = 单元格对象
+      const spec = rows.map((cells, r) => {
+        const tds = []; grid[r] = [];
+        for (let k = 0; k < cells.length; k++) {
+          const c = cells[k];
+          if (c === '>') continue;
+          if (c === '^') { const up = r > 0 ? grid[r - 1][k] : null; if (up) { up.rowspan++; grid[r][k] = up; } continue; }
+          let span = 1; while (cells[k + span] === '>') span++;
+          const td = { text: c, colspan: span, rowspan: 1 };
+          for (let j = 0; j < span; j++) grid[r][k + j] = td;
+          tds.push(td);
+        }
+        return tds;
+      });
+      h += `<table class="mt">${spec.map(tds => `<tr>${tds.map(td => `<td${td.colspan > 1 ? ` colspan="${td.colspan}"` : ''}${td.rowspan > 1 ? ` rowspan="${td.rowspan}"` : ''}>${esc(td.text)}</td>`).join('')}</tr>`).join('')}</table>`;
+      rows = [];
+    };
     for (const ln of lines) {
       if (ln.length >= 2 && ln.startsWith('|') && ln.endsWith('|')) rows.push(ln.slice(1, -1).split('|'));
       else { flush(); h += esc(ln) + '\n'; }

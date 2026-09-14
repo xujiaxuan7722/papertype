@@ -21,6 +21,7 @@ SPRM_PILVL = 0x260A
 SPRM_PILFO = 0x460B
 SPRM_PFINTABLE = 0x2416
 SPRM_PFTTP = 0x2417
+SPRM_TDEFTABLE = 0xD608
 SPRM_PHUGEPAPX = 0x6646     # 段落属性太大（表格行结束标记常见）时放在 Data 流里
 _SPRA_SIZE = {0: 1, 1: 1, 2: 2, 3: 4, 4: 2, 5: 2, 7: 3}
 _DECIMAL_NFC = {0x00, 0x16}       # 阿拉伯数字 / 前导零
@@ -149,6 +150,8 @@ class _Doc:
                 props["intable"] = bool(grp[pos])
             elif sprm == SPRM_PFTTP and size == 1:
                 props["ttp"] = bool(grp[pos])
+            elif sprm == SPRM_TDEFTABLE:
+                props["tdef"] = bytes(grp[pos:pos + size])     # 行结束标记上的表格定义
             elif sprm == SPRM_PHUGEPAPX and size == 4 and data:
                 off = struct.unpack_from("<I", grp, pos)[0]
                 if off + 2 <= len(data):
@@ -251,6 +254,37 @@ def extract_lines(doc_path: str | Path) -> list[Line]:
     out: list[Line] = []
     cell_buf: list[str] = []      # 当前单元格里已结束的段落
     row_cells: list[str] = []     # 当前表格行里已结束的单元格
+    tbl_rows: list[tuple[list[str], list[int], list[int]]] = []   # 整张表缓冲：(单元格, 列边界, TC 标志)
+
+    def flush_table():
+        nonlocal tbl_rows, y
+        if not tbl_rows:
+            return
+        grid: list[int] = []                                   # 全表列边界并集（容差 15 twip）
+        for _, centers, _ in tbl_rows:
+            for c in centers:
+                if not any(abs(c - g) <= 15 for g in grid):
+                    grid.append(c)
+        grid.sort()
+        for cells, centers, flags in tbl_rows:
+            spec: list[str] = []
+            for k, txt in enumerate(cells):
+                fl = flags[k] if k < len(flags) else 0
+                if fl & 0x02 and not fl & 0x01:
+                    txt = ">"                                  # 旧式横向合并：续格
+                elif fl & 0x20 and not fl & 0x40:
+                    txt = "^"                                  # 纵向合并：续格
+                span = 1
+                if k + 1 < len(centers):
+                    lo, hi = centers[k], centers[k + 1]
+                    span = max(1, sum(1 for g in grid if lo - 15 < g < hi - 15))
+                spec.append(txt)
+                spec.extend([">"] * (span - 1))
+            if any(c not in ("", ">", "^") for c in spec):
+                flat = "  ".join(c.replace("\n", " ") for c in spec if c not in ("", ">", "^"))
+                out.append(Line(text=flat, page=1, y=y, x=10.0, height=1.0, source="docx", cells=spec))
+                y += 1
+        tbl_rows = []
     y = 0.0
     start = 0
     n = len(text)
@@ -264,10 +298,8 @@ def extract_lines(doc_path: str | Path) -> list[Line]:
             if ch == "\x07" or p["intable"]:
                 # 表格：单元格内的段落攒进 cell_buf，0x07 结束一个单元格；带 fTtp 的 0x07 是行结束
                 if ch == "\x07" and p["ttp"]:
-                    if any(row_cells):
-                        flat = "  ".join(c.replace("\n", " ") for c in row_cells if c)
-                        out.append(Line(text=flat, page=1, y=y, x=10.0, height=1.0, source="docx", cells=list(row_cells)))
-                        y += 1
+                    centers, flags = _tdef(p.get("tdef"), len(row_cells))
+                    tbl_rows.append((list(row_cells), centers, flags))
                     row_cells, cell_buf = [], []
                 elif ch == "\x07":
                     cell_buf.extend(pieces)
@@ -278,6 +310,7 @@ def extract_lines(doc_path: str | Path) -> list[Line]:
                 start = i + 1
                 i += 1
                 continue
+            flush_table()
             number = None
             ilfo, ilvl = p["ilfo"], p["ilvl"]
             if ilfo and ilfo != 0xF801:
@@ -297,4 +330,21 @@ def extract_lines(doc_path: str | Path) -> list[Line]:
                 y += 1
             start = i + 1
         i += 1
+    flush_table()
     return out
+
+
+def _tdef(tdef: bytes | None, ncell: int) -> tuple[list[int], list[int]]:
+    """解 sprmTDefTable：返回 (列边界 twip 列表, 各 TC 的标志字)。没有定义时按等宽假设。"""
+    if not tdef or len(tdef) < 3:
+        return list(range(ncell + 1)), [0] * ncell
+    itc = tdef[0]
+    need = 1 + 2 * (itc + 1)
+    if len(tdef) < need:
+        return list(range(ncell + 1)), [0] * ncell
+    centers = list(struct.unpack_from("<%dh" % (itc + 1), tdef, 1))
+    flags = []
+    for k in range(itc):
+        off = need + 20 * k
+        flags.append(struct.unpack_from("<H", tdef, off)[0] if off + 2 <= len(tdef) else 0)
+    return centers, flags
