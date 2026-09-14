@@ -21,6 +21,7 @@ SPRM_PILVL = 0x260A
 SPRM_PILFO = 0x460B
 SPRM_PFINTABLE = 0x2416
 SPRM_PFTTP = 0x2417
+SPRM_PHUGEPAPX = 0x6646     # 段落属性太大（表格行结束标记常见）时放在 Data 流里
 _SPRA_SIZE = {0: 1, 1: 1, 2: 2, 3: 4, 4: 2, 5: 2, 7: 3}
 _DECIMAL_NFC = {0x00, 0x16}       # 阿拉伯数字 / 前导零
 _NONE_NFC = 0xFF
@@ -44,6 +45,7 @@ class _Doc:
             flags = struct.unpack_from("<H", self.wd, 0x0A)[0]
             name = "1Table" if flags & 0x0200 else "0Table"
             self.table = ole.openstream(name).read() if ole.exists(name) else b""
+            self.data = ole.openstream("Data").read() if ole.exists("Data") else b""
         finally:
             ole.close()
         self.ccp_text = struct.unpack_from("<i", self.wd, 0x4C)[0]
@@ -118,13 +120,13 @@ class _Doc:
                         grp = page[p + 1: p + 1 + cb * 2 - 1]
                     if len(grp) >= 2:
                         props["istd"] = struct.unpack_from("<H", grp, 0)[0]
-                        self._read_sprms(grp[2:], props)
+                        self._read_sprms(grp[2:], props, self.data)
                 out.append((rgfc[i], rgfc[i + 1], props))
         out.sort(key=lambda t: t[0])
         return out
 
     @staticmethod
-    def _read_sprms(grp: bytes, props: dict) -> None:
+    def _read_sprms(grp: bytes, props: dict, data: bytes = b"") -> None:
         pos = 0
         while pos + 2 <= len(grp):
             sprm = struct.unpack_from("<H", grp, pos)[0]
@@ -147,6 +149,11 @@ class _Doc:
                 props["intable"] = bool(grp[pos])
             elif sprm == SPRM_PFTTP and size == 1:
                 props["ttp"] = bool(grp[pos])
+            elif sprm == SPRM_PHUGEPAPX and size == 4 and data:
+                off = struct.unpack_from("<I", grp, pos)[0]
+                if off + 2 <= len(data):
+                    cb = struct.unpack_from("<H", data, off)[0]
+                    _Doc._read_sprms(data[off + 2: off + 2 + cb], props, b"")
             pos += size
 
     # ---- 列表定义：ilfo → 各级 (nfc, start) ----
