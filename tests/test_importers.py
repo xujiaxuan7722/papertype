@@ -349,3 +349,43 @@ A.甲   B.乙   C.丙   D.丁
     assert [q.no for q in r.questions] == [42, 43, 44]
     assert [len(q.options) for q in r.questions] == [4, 4, 4]
     assert r.questions[1].stem.startswith("市场调节是指")
+
+
+def test_numbered_subitems_in_stem_and_multi_dash_hint():
+    """题干里的 "1．2．3．4．" 小项不是新题；"回答106——110题" 的双破折号提示语要认出材料。"""
+    text = """105．下列说法与资料相符的有几个？（  ）
+1．甲国幸福指数高于乙国。
+2．人口过亿的国家失业率越低。
+3．丙国失业率低于丁国。
+4．戊国幸福指数最低。
+A．0   B．1   C．2   D．3
+四、根据以下资料，回答106——110题
+2009年5月全国邮电业务基本情况
+邮电业务总量  亿元  10722.8  4274.2  11.4  11.6
+邮政业务总量  亿元  630.1  133.0  12.7  16.4
+106．2009年1—5月，平均每月约多少亿份？（  ）
+A．13.7   B．14.2   C．14.6   D．17.8
+107．同比增长率从高到低排列正确的是：（  ）
+A．函件—包裹   B．汇票—包裹   C．快递—汇票   D．函件—汇票
+"""
+    r = parse_lines(text_import.extract_lines(text), source="docx")
+    assert [q.no for q in r.questions] == [105, 106, 107]
+    q105, q106, q107 = r.questions
+    assert q105.options == ["0", "1", "2", "3"] and "4．戊国幸福指数最低" in q105.stem
+    assert q106.group and q107.group == q106.group and "邮电业务总量" in (q106.material or "")
+    assert len(q107.options) == 4
+
+
+def test_answer_section_at_end_stops_parsing():
+    """卷末"参考答案与解析"之后的 "1．【解析】A。…" 不是新题。"""
+    text = """139.甲（ ）。
+A. 一 B. 二 C. 三 D. 四
+140.乙（ ）。
+A. 一 B. 二 C. 三 D. 四
+参考答案与解析
+1．【解析】A。一个"更"字传达出自豪的语气。
+2．【解析】C。传达：向别人转述。
+"""
+    r = parse_lines(text_import.extract_lines(text), source="docx")
+    assert [q.no for q in r.questions] == [139, 140]
+    assert r.questions[1].options == ["一", "二", "三", "四"]

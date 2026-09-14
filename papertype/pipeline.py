@@ -40,6 +40,10 @@ def import_file(path: str | Path, title: str | None = None) -> Paper:
             paper = _build(pid, title or result.title or path.stem, path.name, "doc", result, lines)
             for q in paper.questions:
                 q.image = None          # .doc 没有页面图，规则按「2/3」「°F」等字样猜的看图作答不成立
+                if q.type in ("single", "multi") and not q.options:
+                    q.options = ["", "", "", ""]        # 选项是图（图形推理等）：按字母作答
+                    q.reviewed = False
+                    q.issues.append("本题的图在 Word 里是图片，老格式 .doc 拿不到；可对照原卷按字母作答，或另存为 .docx 重新导入")
         else:
             raise ImportError_("这份文件不是有效的 Word 文档（既不是 .docx 包也不是老版 .doc），请在 WPS 或 Word 里「另存为」.docx 再导入。")
     elif ext == ".pdf":

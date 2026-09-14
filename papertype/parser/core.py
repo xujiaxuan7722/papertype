@@ -25,7 +25,7 @@ ANALYSIS_TAIL_RE = re.compile(r"故本题|正确答案|答案[为选是]|排除\
 INLINE_ANSWER_RE = re.compile(r"[（(]\s*([A-G]{1,4})\s*[)）]")
 BLANK_RUN_RE = re.compile(r"[_＿]{2,}")
 PAREN_BLANK_RE = re.compile(r"[（(]\s{2,}[)）]")
-MATERIAL_HINT_RE = re.compile(r"(阅读|根据)(以下|下列|下面)?(材料|短文|文章|资料|统计表|图表|下表)|回答\s*第?\s*\d+\s*[～~\-—–至到]\s*\d+\s*题|Text\s*\d+|Passage\s*\d+")
+MATERIAL_HINT_RE = re.compile(r"(阅读|根据)(以下|下列|下面)?(材料|短文|文章|资料|统计表|图表|下表)|回答\s*第?\s*\d+\s*[～~\-—–至到]+\s*\d+\s*题|Text\s*\d+|Passage\s*\d+")
 TEXT_MARK_RE = re.compile(r"^\s*(Text|Passage)\s*\d+\s*$", re.I)
 TYPE_MARK_RE = re.compile(r"^\s*[【\[（(]\s*(单选题|多选题|判断题|填空题|简答题|不定项选择题|单选|多选|判断|填空|简答|不定项)\s*[】\]）)]\s*")
 TYPE_MARK_MAP = {"单选": "single", "多选": "multi", "判断": "judge", "填空": "blank", "简答": "essay", "不定项": "multi"}
@@ -41,6 +41,7 @@ SECTION_TYPES = [
 MATH_RE = re.compile(r"[⁰¹²³⁴⁵⁶⁷⁸⁹×÷√∑∫≈≠≤≥∠π°∞]|\d\s*/\s*\d|[\uE000-\uF8FF]|□")
 PUA_RE = re.compile(r"[\uE000-\uF8FF\uFFFD]")
 FORMULA_LINE_RE = re.compile(r"^[\d\s+\-×÷*/=().,（）％%^²³√…]{8,}$")
+ANSWER_SECTION_RE = re.compile(r"(参考)?答案(与|及|和)?(解析|详解)?(部分)?\s*[:：]?|(参考)?(答案)?解析(部分)?\s*[:：]?")   # 卷末答案区的独立标题行
 ANSWER_KEY_ROW_RE = re.compile(r"^\s*(\d{1,3}\s*[\.．、:：]?\s*[A-G]{1,4}\s*[,，;；、]?\s*){2,}$")   # 答案表行："1. B  2. C  3. C"
 TABLE_ROW_RE = re.compile(r"^[^\d]{1,24}?\s*(-?\d[\d.,%]*\s*){3,}$")   # 表格数据行："国有单位  43.32  -6.43  41.28"
 ANALYSIS_BODY_RE = re.compile(r"解得|可得|可知|则[有：:]|设[一-鿿a-zA-Z]{0,4}[为是]|排除|选项|答案|∴|综上|即可|[=＝]|故选|本题|考[查察]")
@@ -111,7 +112,8 @@ def _merge_paragraphs(lines: list[Line]) -> list[Para]:
         starts_new = hard_new or short_heading
         if prev and not prev.image and not starts_new and ln.source in ("pdf", "ocr", "docx"):
             prev_last = NUM_RE.sub("", prev.lines[-1].text, count=1) if prev.lines else prev.text
-            blocked = TABLE_ROW_RE.match(prev_last.strip()) or MATERIAL_HINT_RE.search(text)   # 表格行之后 / 材料提示语之前不续行
+            blocked = TABLE_ROW_RE.match(prev_last.strip()) or MATERIAL_HINT_RE.search(text) \
+                or MATERIAL_HINT_RE.search(prev_last)   # 表格行之后 / 材料提示语前后不续行
             if ln.page != prev.page and prev.kind != "option" and not _ends_sentence(prev.text) and not blocked:
                 _append(prev, ln); continue
             if abs(ln.x - prev.x) <= tol and prev.kind == "other" and not _ends_sentence(prev.text) and not blocked:
@@ -247,6 +249,7 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
     seen_first_question = False
 
     part_seq = 0
+    sub_seq = 0                       # 当前题干里已并入的编号小项数
     section_of_first = ""
     section_after_q = False
 
@@ -281,7 +284,7 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
         if pos:
             material_pos[group_id] = pos
         group_count = 0
-        m = re.search(r"回答\s*第?\s*(\d+)\s*[～~\-—–至到]\s*(\d+)\s*题", text)
+        m = re.search(r"回答\s*第?\s*(\d+)\s*[～~\-—–至到]+\s*(\d+)\s*题", text)
         group_end = int(m.group(2)) if m else None
 
     def flush_pending_as_material():
@@ -355,6 +358,8 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
         if p.kind == "answer":
             close_current(p.page, p.y)
             skipping_answer = True
+            if ANSWER_SECTION_RE.fullmatch(p.text.strip()) and seen_first_question:
+                break                   # 卷末"参考答案与解析"独立标题：后面全是答案与解析，不再切题
             continue
         if p.kind == "other":
             if not (cur is not None and qmeta.get(id(cur), {}).get("inferred") and _rescue_number(p, last_no)):
@@ -375,6 +380,13 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
                 cur.stem = cur.stem[:_first_option_pos(cur.stem)].strip()
                 cur.options = [o for _, o in opts]
                 cur_stage = "options"
+            continue
+        # 题干里的编号小项："105．下列说法与资料相符的有几个？" 后接 "1．… 2．… 3．… 4．…" 再接 A～D 选项：不是新题
+        if p.kind == "number" and cur is not None and not cur.options and cur.stem.strip() and not skipping_answer \
+                and ((sub_seq == 0 and p.number == 1 and last_no >= 2 and _subitems_ahead(paras, idx))
+                     or (sub_seq > 0 and p.number == sub_seq + 1)):
+            cur.stem = (cur.stem + "\n" + p.text.strip()).strip()
+            sub_seq = p.number
             continue
         if p.kind == "number" and last_no and p.number not in (1, last_no + 1, last_no + 2, last_no + 3):
             p.kind = "other"        # 材料 / 图表里的数字，不是题号
@@ -450,6 +462,7 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             cur = Question(unit=unit, no=p.number or 0, stem=body.strip(), page=p.page, y0=p.y, source=source)
             cur.blanks = p.blanks
             section_after_q = False
+            sub_seq = 0
             if TYPE_MARK_RE.match(cur.stem):
                 group_id = None          # 题干自带【多选题】等标记 = 新的分区，材料组到此为止
             if group_id:
@@ -516,6 +529,21 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
     _finalize(questions, qmeta)
     validate(questions)
     return ParseResult(title=title, units=units, questions=questions)
+
+
+def _subitems_ahead(paras: list[Para], idx: int) -> bool:
+    """paras[idx] 是编号 1 的段：后面若先遇到选项行（中间只允许 2、3、4… 顺序编号），它们是题干里的小项。"""
+    expect = 2
+    for q in paras[idx + 1: idx + 12]:
+        if q.kind == "option":
+            return True
+        if q.kind == "number":
+            if q.number != expect:
+                return False
+            expect += 1
+        elif q.kind in ("unit", "section", "answer", "mark"):
+            return False
+    return False
 
 
 def _material_text(paras: list[Para]) -> str:
