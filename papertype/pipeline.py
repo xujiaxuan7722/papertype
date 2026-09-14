@@ -27,7 +27,7 @@ def import_file(path: str | Path, title: str | None = None) -> Paper:
         lines = docx_import.extract_lines(path, assets_dir=adir)
         result = parse_lines(lines, source="docx")
         paper = _build(pid, title or result.title or path.stem, path.name, "docx", result, lines)
-        _crops_docx(paper, adir)
+        _crops_docx(paper, adir, lines)
     elif ext == ".pdf":
         if not pdf_import.has_text_layer(path):
             raise ImportError_("这份 PDF 没有文字层，请改用「OCR 识图」入口导入。")
@@ -183,21 +183,14 @@ def _stack(base: Path, next_page: Path, next_y1: float) -> None:
     canvas.save(base)
 
 
-def _crops_docx(paper: Paper, adir: Path) -> None:
-    """docx：把落在本题范围内的内嵌图片纵向拼成一张。"""
+def _crops_docx(paper: Paper, adir: Path, lines) -> None:
+    """docx：按位置分配内嵌图片。落在本题范围内的图纵向拼成一张作 crop/image，
+    材料段（组内第一题的 m_y0 到 y0 之间）的图拼成 material_crop；无主的图不分给任何题。"""
     from PIL import Image
-    imgs = sorted(adir.glob("docx_img_*"))
-    if not imgs:
-        return
-    # 图片按出现顺序对应段落序号：docx 导入器里图片 Line 的 y 与段落序号同一坐标轴
-    # 这里简化：按题目顺序把图片分配到"上一道题"
-    from .importers.docx_import import extract_lines  # noqa
-    # 无法从 Question 反查图片序号时，退回：有 image 标记的题依次领取图片
-    pool = list(imgs)
-    for q in paper.questions:
-        if q.image and pool:
-            pics = [pool.pop(0)]
-            name = f"q_{paper.questions.index(q) + 1:03d}_{_safe(q.unit)}_{q.no}.png"
+    imgs = [(l.y, adir / l.ref) for l in lines if l.image and l.ref and (adir / l.ref).exists()]
+
+    def stack(pics: list[Path], name: str) -> str | None:
+        try:
             ims = [Image.open(p).convert("RGB") for p in pics]
             w = max(i.width for i in ims); h = sum(i.height for i in ims)
             canvas = Image.new("RGB", (w, h), "white")
@@ -205,7 +198,25 @@ def _crops_docx(paper: Paper, adir: Path) -> None:
             for im in ims:
                 canvas.paste(im, (0, y)); y += im.height
             canvas.save(adir / name)
-            q.image = name; q.crop = name
+            return name
+        except Exception:
+            return None
+
+    for i, q in enumerate(paper.questions):
+        _, end_y, _ = _span_end(paper, i, q)
+        if q.group and q.m_y0 < q.y0:
+            mats = [p for y, p in imgs if q.m_y0 <= y < q.y0]
+            if mats:
+                q.material_crop = stack(mats, f"m_{i + 1:03d}_{_safe(q.unit)}_{q.no}.png")
+        mine = [p for y, p in imgs if q.y0 <= y < end_y]
+        if mine:
+            name = stack(mine, f"q_{i + 1:03d}_{_safe(q.unit)}_{q.no}.png")
+            q.crop = name
+            q.image = name          # Word 没有页面渲染，题内的图就是作答页要看的图
+        elif q.image:
+            q.image = None          # 解析器按字眼猜是图片题，但本题范围内没有图
+            q.reviewed = False
+            q.issues.append("Word 中本题范围内没有图片，请核对题干")
 
 
 def _safe(s: str) -> str:

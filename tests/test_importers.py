@@ -117,3 +117,41 @@ B. y
     r = parse_lines(text_import.extract_lines(text), source="text")
     assert [(q.unit, q.no) for q in r.questions] == [("数量关系（3）", 1), ("数量关系（3）", 2), ("数量关系（3）", 3), ("资料分析（2）", 1), ("资料分析（2）", 2)]
     assert r.questions[3].group and "国有单位  43.32" in r.questions[3].material
+
+
+def test_docx_images_assigned_by_position(tmp_path, monkeypatch):
+    """图片按出现位置归题：题 1 一张、题 2 没有、单元标题下的图不分给任何题、题 3 两张拼成一张。"""
+    from PIL import Image
+    from papertype import pipeline
+
+    monkeypatch.setenv("PAPERTYPE_DATA", str(tmp_path / "data"))
+
+    def pic(name, h):
+        p = tmp_path / name
+        Image.new("RGB", (80, h), "black").save(p)
+        return str(p)
+
+    doc = Document()
+    doc.add_paragraph("一、单选题")
+    doc.add_paragraph("1. 如图，下列说法正确的是（ ）。")
+    doc.add_picture(pic("a.png", 60))
+    for o in ["A. 甲", "B. 乙", "C. 丙", "D. 丁"]:
+        doc.add_paragraph(o)
+    doc.add_paragraph("2. 下列属于关系型数据库的是（ ）。")
+    doc.add_paragraph("A. MySQL  B. Redis")
+    doc.add_paragraph("C. MongoDB  D. Neo4j")
+    doc.add_paragraph("二、判断题")
+    doc.add_picture(pic("banner.png", 30))      # 单元标题下的装饰图，不属于任何题
+    doc.add_paragraph("3. 图中两个图形面积相等。（ ）")
+    doc.add_picture(pic("b.png", 40))
+    doc.add_picture(pic("c.png", 50))
+    f = tmp_path / "pic.docx"
+    doc.save(str(f))
+
+    paper = pipeline.import_file(f)
+    q1, q2, q3 = paper.questions
+    adir = tmp_path / "data" / "assets" / paper.id
+    assert q1.image and Image.open(adir / q1.image).size == (80, 60)
+    assert q2.image is None and q2.crop is None
+    assert q3.image and Image.open(adir / q3.image).size == (80, 90)   # 两张纵向拼接
+    assert q1.image != q3.image
