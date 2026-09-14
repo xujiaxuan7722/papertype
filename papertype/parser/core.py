@@ -25,7 +25,7 @@ ANALYSIS_TAIL_RE = re.compile(r"故本题|正确答案|答案[为选是]|排除\
 INLINE_ANSWER_RE = re.compile(r"[（(]\s*([A-G]{1,4})\s*[)）]")
 BLANK_RUN_RE = re.compile(r"[_＿]{2,}")
 PAREN_BLANK_RE = re.compile(r"[（(]\s{2,}[)）]")
-MATERIAL_HINT_RE = re.compile(r"(阅读|根据)(以下|下列|下面)?(材料|短文|文章|资料)|回答\s*\d+\s*[～~\-—至]\s*\d+\s*题|Text\s*\d+|Passage\s*\d+")
+MATERIAL_HINT_RE = re.compile(r"(阅读|根据)(以下|下列|下面)?(材料|短文|文章|资料|统计表|图表|下表)|回答\s*第?\s*\d+\s*[～~\-—–至到]\s*\d+\s*题|Text\s*\d+|Passage\s*\d+")
 TEXT_MARK_RE = re.compile(r"^\s*(Text|Passage)\s*\d+\s*$", re.I)
 TYPE_MARK_RE = re.compile(r"^\s*[【\[（(]\s*(单选题|多选题|判断题|填空题|简答题|不定项选择题|单选|多选|判断|填空|简答|不定项)\s*[】\]）)]\s*")
 TYPE_MARK_MAP = {"单选": "single", "多选": "multi", "判断": "judge", "填空": "blank", "简答": "essay", "不定项": "multi"}
@@ -41,6 +41,7 @@ SECTION_TYPES = [
 MATH_RE = re.compile(r"[⁰¹²³⁴⁵⁶⁷⁸⁹×÷√∑∫≈≠≤≥∠π°∞]|\d\s*/\s*\d|[\uE000-\uF8FF]|□")
 PUA_RE = re.compile(r"[\uE000-\uF8FF\uFFFD]")
 FORMULA_LINE_RE = re.compile(r"^[\d\s+\-×÷*/=().,（）％%^²³√…]{8,}$")
+ANSWER_KEY_ROW_RE = re.compile(r"^\s*(\d{1,3}\s*[\.．、:：]?\s*[A-G]{1,4}\s*[,，;；、]?\s*){2,}$")   # 答案表行："1. B  2. C  3. C"
 TABLE_ROW_RE = re.compile(r"^[^\d]{1,24}?\s*(-?\d[\d.,%]*\s*){3,}$")   # 表格数据行："国有单位  43.32  -6.43  41.28"
 ANALYSIS_BODY_RE = re.compile(r"解得|可得|可知|则[有：:]|设[一-鿿a-zA-Z]{0,4}[为是]|排除|选项|答案|∴|综上|即可|[=＝]|故选|本题|考[查察]")
 SHORT_HEADING_RE = re.compile(r"[一-鿿A-Za-z]{2,8}(?:\s*[（(]\s*\d{1,3}\s*[)）])?")   # 如"数字推理（25）"
@@ -151,6 +152,8 @@ def _classify(p: Para, ln: Line):
     m = SECTION_RE.match(t)
     if m and len(t) < 20 and not OPTION_HEAD_RE.match(t):
         p.kind = "section"; return
+    if ANSWER_KEY_ROW_RE.match(t):
+        p.kind = "other"; return          # 文末答案表行
     if ln.number:
         p.kind = "number"; p.number = ln.number; return
     m = NUM_RE.match(t) or NUM_WORD_RE.match(t)
@@ -174,6 +177,8 @@ def _classify(p: Para, ln: Line):
 def _rescue_number(p: Para, expected: int) -> bool:
     if p.kind != "other" or expected <= 0:
         return False
+    if TABLE_ROW_RE.match(p.text.split("\n")[0].strip()):
+        return False                       # 表格数据行里的 "1.19" 不是题号
     head = p.text[:16]
     for m in NUM_LOOSE_RE.finditer(head):
         if int(m.group(1)) == expected:
@@ -270,7 +275,7 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
         if pos:
             material_pos[group_id] = pos
         group_count = 0
-        m = re.search(r"回答\s*(\d+)\s*[～~\-—至到]\s*(\d+)\s*题", text)
+        m = re.search(r"回答\s*第?\s*(\d+)\s*[～~\-—–至到]\s*(\d+)\s*题", text)
         group_end = int(m.group(2)) if m else None
 
     def flush_pending_as_material():
@@ -282,8 +287,9 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
             return
         text = "\n".join(x.text for x in pending_other)
         clean = _material_text(pending_other)
-        if not seen_first_question and not unit and not section and group_id is None and not big_images:
-            pending_other, pending_images = [], []      # 卷首说明 / 题量表，不是材料
+        if not seen_first_question and not unit and not section and group_id is None and not big_images \
+                and not MATERIAL_HINT_RE.search(text):
+            pending_other, pending_images = [], []      # 卷首说明 / 题量表，不是材料（带"回答 1～5 题"提示的除外）
             return
         if not clean and not big_images:
             pending_other, pending_images = [], []      # 只有分隔线 / 坐标数字之类的碎片，不是材料
@@ -318,6 +324,9 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
                 and not before_restart \
                 and (pending_other or (skipping_answer and not SECTION_RE.match(p.text))):
             p.kind = "other"          # 材料累积中的小标题 / 解析之后的无编号短行（图表单位、表头）不是分区标题
+        if p.kind == "section" and not SECTION_RE.match(p.text) and p.lines and not p.lines[0].is_heading \
+                and pending_other and any(MATERIAL_HINT_RE.search(x.text) for x in pending_other):
+            p.kind = "other"          # 材料提示语之后的短行（"年度""单位：万元"）是表头，不是分区标题
         if p.kind == "section" and before_restart and pending_after_answer:
             pending_other, pending_after_answer = [], False     # 分区标题前攒的是解析残余
         if p.kind == "section":
@@ -464,8 +473,9 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
                 if pending_after_answer and (ANALYSIS_BODY_RE.search(p.text) or ANALYSIS_TAIL_RE.search(p.text)):
                     pending_other, pending_after_answer, skipping_answer = [], False, True   # 原来是解析，不是材料
                     continue
-                if seen_first_question or unit or section or group_id is not None:
-                    pending_other.append(p)
+                if seen_first_question or unit or section or group_id is not None or pending_other \
+                        or MATERIAL_HINT_RE.search(p.text):
+                    pending_other.append(p)      # 卷首无单元标题时，从"回答 1～5 题"提示语起攒材料
             continue
         if p.kind == "image":
             cur.image = cur.image or "pending"
@@ -508,7 +518,12 @@ def _material_text(paras: list[Para]) -> str:
     for p in paras:
         for l in (p.lines or []):
             t = l.text.strip()
-            if not t or CHART_LINE_RE.match(t):
+            if not t:
+                continue
+            if l.source in ("docx", "text"):
+                out.append(t)            # Word / 粘贴文本没有图表坐标行：表格里纯数字的表头、数据行一律保留
+                continue
+            if CHART_LINE_RE.match(t):
                 continue
             cjk = len(re.findall(r"[一-鿿A-Za-z]", t))
             if cjk < 2 and len(t) > 3:

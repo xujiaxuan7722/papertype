@@ -210,3 +210,60 @@ def test_doc_renamed_as_docx_imports_without_converter(tmp_path, monkeypatch):
     with pytest.raises(pipeline.ImportError_) as e:
         pipeline.import_file(junk)
     assert "另存为" in str(e.value)
+
+
+def test_material_table_at_paper_start_with_decimal_cells():
+    """资料分析卷首材料：提示语带"第"（回答第1—5题）、表格行含 1.19 之类小数、卷首无单元标题，
+    材料仍应成组，表格行不被当成第 1 题。"""
+    text = """(一)
+根据下面的统计表回答第1—5题。
+我国人口形势及预测
+1980  1985  1990  1992  2000  2010
+人口总数（亿）人  9.87  10.58  11.43  11.72  12.48  13.82
+城镇人口（亿人）  1.19  2.50  3.02  3.24  5.23  7.66
+乡村人口（亿人）  7.96  8.08  8.41  8.48  8.71  8.86
+1.预测我国人口总数到哪一年，将接近14亿人
+A. 2000            B. 2010            C. 2020            D.无法确定
+2.预测我国2000年城镇与乡村人口的比例为：
+A. 1∶1            B. 1∶1.5           C. 1∶1.67         D. 1∶2
+"""
+    r = parse_lines(text_import.extract_lines(text), source="docx")
+    assert [q.no for q in r.questions] == [1, 2]
+    q1, q2 = r.questions
+    assert q1.stem.startswith("预测我国人口总数") and q1.options == ["2000", "2010", "2020", "无法确定"]
+    assert q1.group and q2.group == q1.group
+    assert "城镇人口" in (q1.material or "") and "1.19" in q1.material
+    assert "1980  1985" in q1.material                      # 纯数字的年份表头行保留
+
+
+def test_material_short_header_line_is_not_section():
+    """材料提示语之后的短行（"年度"）是表头：材料不被截断，纯数字数据行保留。"""
+    text = """(五)
+根据下面的统计表回答21～25题。
+某大专院校教师情况
+年度
+类别  老年  中年  青年
+1996  120  60  240
+1997  210  40  320
+合计  330
+21.1997年老年教师比1996年多多少人?
+A. 90            B. 70            C. 60            D. 50
+"""
+    r = parse_lines(text_import.extract_lines(text), source="docx")
+    assert [q.no for q in r.questions] == [21]
+    m = r.questions[0].material or ""
+    assert m.startswith("(五)") or m.startswith("根据下面")
+    assert "某大专院校教师情况" in m and "年度" in m and "1997  210  40  320" in m and "合计  330" in m
+
+
+def test_answer_key_rows_at_end_are_not_questions():
+    text = """1.甲是（ ）。
+A. 一 B. 二 C. 三 D. 四
+2.乙是（ ）。
+A. 一 B. 二 C. 三 D. 四
+答案：
+1. B      2. C
+"""
+    r = parse_lines(text_import.extract_lines(text), source="docx")
+    assert [q.no for q in r.questions] == [1, 2]
+    assert r.questions[1].options == ["一", "二", "三", "四"]
