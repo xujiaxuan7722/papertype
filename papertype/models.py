@@ -19,6 +19,7 @@ class Line:
     is_heading: bool = False # docx 标题样式、pdf 大字号
     image: bool = False      # 该行是占位的图片对象
     ref: Optional[str] = None  # docx 内嵌图片的文件名
+    cells: Optional[list[str]] = None  # Word 表格行：各单元格文字（含空格，保持列对齐）
 
 
 @dataclass

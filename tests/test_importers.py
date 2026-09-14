@@ -188,6 +188,7 @@ def test_doc_binary_text_numbering_softbreaks_table():
         "2. 属于关系型数据库的是（ ）。", "A. MySQL  B. Redis", "C. MongoDB  D. Neo4j",
         "二、判断题", "3. HTTP 是无状态协议。（ ）", "备注  本表仅用于测试",
     ]
+    assert lines[-1].cells == ["备注", "本表仅用于测试"]          # 表格行保留单元格
     assert [l.number for l in lines if l.number] == [1, 2, 3]       # 自动编号跨分区连续
     assert lines[0].is_heading and not lines[1].is_heading
     r = parse_lines(lines, source="docx")
@@ -267,3 +268,26 @@ A. 一 B. 二 C. 三 D. 四
     r = parse_lines(text_import.extract_lines(text), source="docx")
     assert [q.no for q in r.questions] == [1, 2]
     assert r.questions[1].options == ["一", "二", "三", "四"]
+
+
+def test_docx_table_kept_as_rows_in_material(tmp_path):
+    """Word 表格：导入器保留单元格（含空表头格），材料里以竖线行保存，作答页渲染成表格。"""
+    doc = Document()
+    doc.add_paragraph("根据下表回答1～2题。")
+    t = doc.add_table(rows=2, cols=3)
+    for r, vals in enumerate([["", "2020", "2021"], ["产量（吨）", "120", "150"]]):
+        for c, v in enumerate(vals):
+            t.rows[r].cells[c].text = v
+    doc.add_paragraph("1.2021年产量比2020年多多少?")
+    doc.add_paragraph("A. 10   B. 20   C. 30   D. 40")
+    doc.add_paragraph("2.2020年产量是多少?")
+    doc.add_paragraph("A. 100   B. 120   C. 150   D. 200")
+    f = tmp_path / "tbl.docx"
+    doc.save(str(f))
+    lines = docx_import.extract_lines(f)
+    rows = [l.cells for l in lines if l.cells is not None]
+    assert rows == [["", "2020", "2021"], ["产量（吨）", "120", "150"]]
+    r = parse_lines(lines, source="docx")
+    assert [q.no for q in r.questions] == [1, 2]
+    m = r.questions[0].material or ""
+    assert "||2020|2021|" in m and "|产量（吨）|120|150|" in m

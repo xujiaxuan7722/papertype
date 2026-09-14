@@ -95,9 +95,10 @@ def _merge_paragraphs(lines: list[Line]) -> list[Para]:
         hard_new = bool(NUM_RE.match(text) or NUM_WORD_RE.match(text) or OPTION_HEAD_RE.match(text)
                         or UNIT_RE.match(text) or SECTION_RE.match(text) or ANSWER_RE.match(text)
                         or ln.is_heading or TEXT_MARK_RE.match(text) or ln.number)
+        hard_new = hard_new or ln.cells is not None          # 表格行自成一段
         prev = paras[-1] if paras else None
-        if prev and prev.kind in ("unit", "section", "mark"):
-            prev = None
+        if prev and (prev.kind in ("unit", "section", "mark") or (prev.lines and prev.lines[-1].cells is not None)):
+            prev = None                                      # 表格行之后也不续行
         tol = max(3.0, ln.height * 0.6)
         if prev and not prev.image and not hard_new and ln.source in ("pdf", "ocr", "docx") \
                 and ln.x < prev.x - tol and ln.page == prev.lines[-1].page:
@@ -306,7 +307,7 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
         pending_other, pending_images = [], []
 
     for idx, p in enumerate(paras):
-        if idx == 0 and p.kind == "other" and len(p.text) <= 30 and not title:
+        if idx == 0 and p.kind == "other" and len(p.text) <= 30 and not title and not MATERIAL_HINT_RE.search(p.text):
             title = p.text          # 卷首第一行短文本 = 试卷名（OCR 路径无字号信息）
             continue
         if p.kind == "unit":
@@ -520,6 +521,9 @@ def _material_text(paras: list[Para]) -> str:
             t = l.text.strip()
             if not t:
                 continue
+            if l.cells is not None:
+                out.append("|" + "|".join(c.replace("\n", " ").replace("|", "｜").strip() for c in l.cells) + "|")
+                continue                 # Word 表格行：竖线格式保存，作答页渲染成表格
             if l.source in ("docx", "text"):
                 out.append(t)            # Word / 粘贴文本没有图表坐标行：表格里纯数字的表头、数据行一律保留
                 continue

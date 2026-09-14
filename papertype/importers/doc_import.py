@@ -19,6 +19,8 @@ OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 SPRM_PISTD = 0x4600
 SPRM_PILVL = 0x260A
 SPRM_PILFO = 0x460B
+SPRM_PFINTABLE = 0x2416
+SPRM_PFTTP = 0x2417
 _SPRA_SIZE = {0: 1, 1: 1, 2: 2, 3: 4, 4: 2, 5: 2, 7: 3}
 _DECIMAL_NFC = {0x00, 0x16}       # 阿拉伯数字 / 前导零
 _NONE_NFC = 0xFF
@@ -106,7 +108,7 @@ class _Doc:
             rgfc = struct.unpack_from("<%dI" % (crun + 1), page, 0)
             for i in range(crun):
                 boff = page[4 * (crun + 1) + 13 * i]
-                props = {"istd": 0, "ilfo": 0, "ilvl": 0}
+                props = {"istd": 0, "ilfo": 0, "ilvl": 0, "intable": False, "ttp": False}
                 if boff:
                     p = boff * 2
                     cb = page[p]
@@ -141,6 +143,10 @@ class _Doc:
                 props["ilvl"] = grp[pos]
             elif sprm == SPRM_PISTD and size == 2:
                 props["istd"] = struct.unpack_from("<H", grp, pos)[0]
+            elif sprm == SPRM_PFINTABLE and size == 1:
+                props["intable"] = bool(grp[pos])
+            elif sprm == SPRM_PFTTP and size == 1:
+                props["ttp"] = bool(grp[pos])
             pos += size
 
     # ---- 列表定义：ilfo → 各级 (nfc, start) ----
@@ -233,9 +239,11 @@ def extract_lines(doc_path: str | Path) -> list[Line]:
                 lo = mid + 1
             else:
                 return p
-        return {"istd": 0, "ilfo": 0, "ilvl": 0}
+        return {"istd": 0, "ilfo": 0, "ilvl": 0, "intable": False, "ttp": False}
 
     out: list[Line] = []
+    cell_buf: list[str] = []      # 当前单元格里已结束的段落
+    row_cells: list[str] = []     # 当前表格行里已结束的单元格
     y = 0.0
     start = 0
     n = len(text)
@@ -244,11 +252,28 @@ def extract_lines(doc_path: str | Path) -> list[Line]:
         ch = text[i] if i < n else "\r"
         if ch in ("\r", "\x07") or i == n:
             para = text[start:i]
-            is_row_end = ch == "\x07" and i + 1 < n and text[i + 1] == "\x07"
             p = props_at(i if i < n else max(n - 1, 0))
+            pieces = [t for t in (_clean(t) for t in para.split("\x0b")) if t]
+            if ch == "\x07" or p["intable"]:
+                # 表格：单元格内的段落攒进 cell_buf，0x07 结束一个单元格；带 fTtp 的 0x07 是行结束
+                if ch == "\x07" and p["ttp"]:
+                    if any(row_cells):
+                        flat = "  ".join(c.replace("\n", " ") for c in row_cells if c)
+                        out.append(Line(text=flat, page=1, y=y, x=10.0, height=1.0, source="docx", cells=list(row_cells)))
+                        y += 1
+                    row_cells, cell_buf = [], []
+                elif ch == "\x07":
+                    cell_buf.extend(pieces)
+                    row_cells.append("\n".join(cell_buf))
+                    cell_buf = []
+                else:
+                    cell_buf.extend(pieces)
+                start = i + 1
+                i += 1
+                continue
             number = None
             ilfo, ilvl = p["ilfo"], p["ilvl"]
-            if ilfo and ilfo != 0xF801 and ch == "\r":
+            if ilfo and ilfo != 0xF801:
                 nfc, st = fmts.get(ilfo, {}).get(ilvl, (0, 1))
                 if nfc in _DECIMAL_NFC or nfc == _NONE_NFC:
                     counters[(ilfo, ilvl)] = counters.get((ilfo, ilvl), st - 1) + 1
@@ -256,39 +281,13 @@ def extract_lines(doc_path: str | Path) -> list[Line]:
                     if nfc == _NONE_NFC:
                         number = None
             heading = 1 <= p["istd"] <= 9
-            pieces = [t for t in (_clean(t) for t in para.split("\x0b")) if t]
-            if ch == "\x07":
-                # 表格：每个单元格先各落一条 y 相同的 Line，行结束（连续两个 0x07）后 y 才前进
-                if pieces:
-                    out.append(Line(text="  ".join(pieces), page=1, y=y, x=10.0, height=1.0, source="docx"))
-                if is_row_end:
-                    y += 1
-                    i += 1
-            else:
-                for k, t in enumerate(pieces):
-                    if k == 0 and number is not None and not re.match(r"^\d+\s*[\.．、]", t):
-                        t = f"{number}. {t}"
-                    out.append(Line(text=t, page=1, y=y, x=10.0, height=1.0, source="docx",
-                                    number=number if k == 0 else None,
-                                    blanks=len(BLANK_RUN_RE.findall(t)), is_heading=heading and k == 0))
-                    y += 1
+            for k, t in enumerate(pieces):
+                if k == 0 and number is not None and not re.match(r"^\d+\s*[\.．、]", t):
+                    t = f"{number}. {t}"
+                out.append(Line(text=t, page=1, y=y, x=10.0, height=1.0, source="docx",
+                                number=number if k == 0 else None,
+                                blanks=len(BLANK_RUN_RE.findall(t)), is_heading=heading and k == 0))
+                y += 1
             start = i + 1
         i += 1
-    # 表格：把连续的单元格行合并成一行
-    return _merge_table_rows(out)
-
-
-def _merge_table_rows(lines: list[Line]) -> list[Line]:
-    """上面把每个单元格各落了一条 y 相同的 Line；同一 y 的合并成一行。"""
-    merged: list[Line] = []
-    for l in lines:
-        if merged and merged[-1].y == l.y:
-            merged[-1].text = (merged[-1].text + "  " + l.text).strip()
-            merged[-1].blanks += l.blanks
-        else:
-            merged.append(l)
-    y = 0.0
-    for l in merged:
-        l.y = y
-        y += 1
-    return merged
+    return out

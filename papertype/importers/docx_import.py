@@ -134,12 +134,11 @@ def extract_lines(docx_path: str | Path, assets_dir: str | Path | None = None) -
                 seen = set()
                 for c in row.cells:
                     if id(c._tc) in seen:
-                        continue
+                        continue                       # 横向合并的单元格只算一次
                     seen.add(id(c._tc))
-                    ct = " ".join(pp.text.strip() for pp in c.paragraphs if pp.text.strip())
-                    if ct:
-                        cells.append(ct)
-                if cells:
-                    out.append(Line(text="  ".join(cells), page=1, y=y, x=10.0, height=1.0, source="docx"))
+                    cells.append("\n".join(pp.text.strip() for pp in c.paragraphs if pp.text.strip()))
+                if any(cells):
+                    text = "  ".join(c.replace("\n", " ") for c in cells if c)
+                    out.append(Line(text=text, page=1, y=y, x=10.0, height=1.0, source="docx", cells=cells))
                     y += 1
     return out

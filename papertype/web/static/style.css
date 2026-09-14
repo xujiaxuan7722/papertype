@@ -120,3 +120,6 @@ img{max-width:100%;height:auto}
 .totop .lbl{font-size:1em;color:var(--ink);line-height:1;margin-top:calc(var(--d) * 0.05)}
 .totop:hover{background:var(--paper-2);border-color:var(--ink)}
 [hidden]{display:none !important}
+.material table.mt{border-collapse:collapse;margin:6px 0 8px;font-size:13px;white-space:normal;max-width:100%}
+.material table.mt td{border:1px solid var(--ink-2);padding:3px 10px;text-align:center;vertical-align:middle;min-width:2.5em}
+.material table.mt tr td:first-child{text-align:left}
