@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pytest
 from docx import Document
-from docx.shared import Pt
 
 from papertype.importers import docx_import, ocr_import, text_import
 from papertype.parser import parse_lines
@@ -393,7 +392,6 @@ A. 一 B. 二 C. 三 D. 四
 
 def test_doc_picture_option_questions_get_letter_options(tmp_path, monkeypatch):
     """.doc 里选项全是图的题（图形推理）：题干末尾只剩"（ ）"、没有选项 → 单选 + A～D 空选项按字母作答，并标待核对。"""
-    import shutil
     from papertype import pipeline
     monkeypatch.setenv("PAPERTYPE_DATA", str(tmp_path / "data"))
     # 用文本入口构造同样形态的题，再走 doc 分支的后处理逻辑

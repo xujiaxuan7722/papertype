@@ -47,7 +47,6 @@ def test_questions_to_text_roundtrip():
 
 
 def test_raw_span_text_from_pdf(tmp_path, monkeypatch):
-    import os
     monkeypatch.setenv("PAPERTYPE_DATA", str(tmp_path))
     from papertype import pipeline
     p = pipeline.import_file("tests/fixtures/icbc.pdf")

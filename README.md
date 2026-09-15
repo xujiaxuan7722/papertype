@@ -42,7 +42,7 @@ papertype/
   pipeline.py  导入管线：导入 → 切题 → 裁图 → 草稿
   server.py    FastAPI 本地接口
   web/static/  前端（无框架）
-tests/         两份银行真题 + 两张截图作为回归用例
+tests/         两份银行真题 PDF + 两张截图 + Word 夹具（.doc / .docx，含合并单元格）作为回归用例
 ```
 
 ## 测试

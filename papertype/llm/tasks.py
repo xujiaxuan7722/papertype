@@ -93,7 +93,7 @@ def questions_to_text(paper: Paper, only: list[str] | None = None) -> str:
         if q.unit != unit:
             unit = q.unit
             if unit:
-                out.append(f"第{unit}单元 {unit}" if False else f"单元：{unit}")
+                out.append(f"单元：{unit}")
         if q.material:
             out.append("材料：" + q.material)
         out.append(f"{q.no}. {q.stem}")

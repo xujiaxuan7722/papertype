@@ -9,7 +9,7 @@ from pathlib import Path
 from .importers import doc_import, docx_import, ocr_import, pdf_import, text_import
 from .models import Paper, Question
 from .parser import parse_lines
-from .store.files import assets_dir, new_id, save_paper
+from .store.files import assets_dir, new_id
 
 TYPE_LABEL = {"single": "单选", "multi": "多选", "judge": "判断", "blank": "填空", "essay": "简答"}
 

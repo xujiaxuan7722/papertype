@@ -394,7 +394,6 @@ def parse_lines(lines: list[Line], source: str = "text") -> ParseResult:
         if p.kind == "number" and p.number == 1 and last_no >= 3:
             close_current(p.page, p.y)
             if not unit:
-                part_seq_before = part_seq
                 # 第一次重排时，把前面的题补进"第 1 部分"
                 first_name = section_of_first or "第1部分"
                 for q in questions:
