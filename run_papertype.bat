@@ -18,9 +18,16 @@ if not exist .venv\Scripts\python.exe (
 REM 每次都检查依赖是否真的装齐（上次中断过也能自动补装）
 .venv\Scripts\python -c "import uvicorn, fastapi, pymupdf, docx, rapidocr, olefile, openpyxl, httpx, PIL" >nul 2>nul
 if errorlevel 1 (
-  echo 正在安装依赖（清华镜像，几分钟，请勿关闭窗口）……
-  .venv\Scripts\python -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple
-  .venv\Scripts\python -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple || goto :fail
+  echo 正在安装依赖（几分钟，请勿关闭窗口）。依次尝试阿里云 / 清华 / 腾讯云 / 官方源……
+  for %%m in (https://mirrors.aliyun.com/pypi/simple/ https://pypi.tuna.tsinghua.edu.cn/simple https://mirrors.cloud.tencent.com/pypi/simple https://pypi.org/simple) do (
+    echo.
+    echo ===== 尝试镜像 %%m =====
+    .venv\Scripts\python -m pip install -e . -i %%m
+    if not errorlevel 1 goto :installed
+  )
+  echo [错误] 所有镜像都没装成。若开着 VPN、WARP 或代理软件，请先关掉再重试。
+  goto :fail
+  :installed
   .venv\Scripts\python -c "import uvicorn, fastapi, pymupdf, docx, rapidocr, olefile, openpyxl, httpx, PIL" || goto :fail
   echo 依赖安装完成。
 )
