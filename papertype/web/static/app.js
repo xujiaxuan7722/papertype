@@ -99,8 +99,8 @@ async function importPage() {
     <div class="grid2">
       <div>
         ${mode === 'text' ? `<textarea id="txt" style="min-height:320px" placeholder="把试卷文本贴进来。豆包转出的文本也走这里。&#10;题号必须有；选项每个一行或同行都可以。"></textarea>`
-        : `<div class="drop" id="drop"><p>${mode === 'file' ? '拖入一份 .docx 或 .pdf' : '拖入一张或多张图片（jpg / png），或扫描版 pdf；多张按文件名顺序'}</p>
-            <input type="file" id="files" ${mode === 'ocr' ? 'multiple accept=".jpg,.jpeg,.png,.pdf"' : 'accept=".doc,.docx,.pdf"'}>
+        : `<div class="drop" id="drop"><p>${mode === 'file' ? '拖入一份或多份 Word / PDF；多份时每个文件各成一份试卷' : '拖入一张或多张图片（jpg / png），或扫描版 pdf；多张按文件名顺序'}</p>
+            <input type="file" id="files" ${mode === 'ocr' ? 'multiple accept=".jpg,.jpeg,.png,.pdf"' : 'multiple accept=".doc,.docx,.pdf"'}>
             <p class="muted" id="flist"></p></div>`}
         <div class="f" style="margin-top:12px"><label class="muted">试卷名（可留空，自动取卷首标题）</label><input type="text" id="title"></div>
       </div>
@@ -114,7 +114,8 @@ async function importPage() {
         <button class="btn primary" id="go" style="margin-top:8px">开始识别</button>
         <p class="muted" id="prog"></p>
       </div>
-    </div>`;
+    </div>
+    <div id="batch"></div>`;
     app.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { mode = b.dataset.m; render(); });
     const drop = $('#drop');
     if (drop) {
@@ -125,7 +126,34 @@ async function importPage() {
       drop.ondragleave = () => drop.classList.remove('over');
       drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); fi.files = e.dataTransfer.files; show(); };
     }
+    // 批量：多份 Word / PDF 逐份走单文件接口，每份各成一份草稿，失败的单独列出
+    const importBatch = async files => {
+      const rows = [];
+      const table = () => `<div class="card" style="margin-top:16px"><h3 style="margin-top:0">批量导入结果</h3>
+        <table class="mt batch"><tr><th>文件</th><th>题数</th><th>待核对</th><th>结果</th></tr>
+        ${rows.map(r => `<tr><td>${esc(r.name)}</td><td>${r.count ?? ''}</td><td>${r.to_review ?? ''}</td>
+          <td>${r.id ? `<a href="#/review/${r.id}">进校正页</a>` : `<span class="bad">${esc(r.error)}</span>`}</td></tr>`).join('')}
+        </table><p class="muted">批量导入不自动送大模型；需要时在各卷校正页点「标红题重切」。</p></div>`;
+      for (let i = 0; i < files.length; i++) {
+        $('#prog').textContent = `正在解析第 ${i + 1} / ${files.length} 份：${files[i].name}`;
+        const fd = new FormData();
+        fd.append('mode', 'file'); fd.append('title', ''); fd.append('files', files[i]);
+        try {
+          const r = await api('/api/import', { method: 'POST', body: fd });
+          rows.push({ name: files[i].name, id: r.paper.id, count: r.stats.count, to_review: r.stats.to_review });
+        } catch (e) { rows.push({ name: files[i].name, error: e.message }); }
+        $('#batch').innerHTML = table();
+      }
+      const ok = rows.filter(r => r.id).length;
+      $('#prog').textContent = `完成：${ok} 份成功，${rows.length - ok} 份失败。`;
+      toast(`批量导入完成：${ok} / ${rows.length} 份成功`, 4000);
+      $('#go').disabled = false;
+    };
     $('#go').onclick = async () => {
+      if (mode === 'file' && $('#files').files.length > 1) {
+        $('#go').disabled = true;
+        return importBatch([...$('#files').files]);
+      }
       const fd = new FormData();
       fd.append('mode', mode); fd.append('title', $('#title').value);
       if (mode === 'text') fd.append('text', $('#txt').value);
